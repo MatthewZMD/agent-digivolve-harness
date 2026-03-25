@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Digivolve Harness"
+  short_description: "Operate Digivolve harness runs"
+  default_prompt: "Use $agent-digivolve-harness-operator to operate or continue the Agent Digivolve Harness run in this workspace from its current phase."

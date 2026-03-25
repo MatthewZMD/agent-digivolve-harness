@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/
+runs/
+skills/agent-digivolve-harness-operator/.runtime/

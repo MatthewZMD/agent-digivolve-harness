@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-digivolve-harness"
+version = "0.1.0"
+description = "Codex-native harness for evaluation-driven iterative optimization"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.11"
+authors = [
+  { name = "Open source contributors" }
+]
+keywords = [
+  "agent",
+  "agentic-coding",
+  "evaluation",
+  "harness",
+  "optimization",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Software Development :: Testing",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.scripts]
+digivolve = "agent_digivolve_harness.cli:main"
+
+[project.optional-dependencies]
+release = [
+  "build>=1.2",
+  "twine>=5.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
