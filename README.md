@@ -6,7 +6,7 @@ A capable CLI agent can usually produce a reasonable first pass. The failure mod
 
 This project exists to make that outer loop explicit.
 
-Instead of relying on conversational continuity alone, Agent Digivolve Harness gives the agent a persistent run directory, a fixed evaluation package, a baseline, bounded mutations, and explicit keep-or-revert decisions. The point is not simply to help an agent write something. The point is to help an agent improve something without losing control of the process.
+Instead of relying on conversational continuity alone, Agent Digivolve Harness gives the agent a persistent run directory, a fixed evaluation package, a user-calibrated rubric, labeled examples of good and bad outputs, a baseline, bounded mutations, and explicit keep-or-revert decisions. The point is not simply to help an agent write something. The point is to help an agent improve something without losing control of the process.
 
 ## The Core Idea
 
@@ -43,6 +43,8 @@ At the implementation level, each run gives the agent:
 
 - a persistent run directory on disk
 - an explicit evaluation package
+- a rubric for weighted user preferences and tradeoffs
+- calibration examples that show what good and bad look like
 - a baseline before mutation
 - train and holdout cases
 - one bounded mutation per iteration
@@ -53,6 +55,13 @@ The agent remains the reasoning engine. `digivolve` is the control surface aroun
 ## Why This Is A Framework, Not Just A Tool
 
 The important abstraction here is not "README optimization" or "prompt optimization" in isolation. It is the idea that if you can define an evaluation package for something, you can iterate on it in a disciplined way.
+
+In practice, that package is not just checks and a judge prompt. This repository now scaffolds:
+
+- `evals/checks.yaml` for binary gates
+- `evals/judge.md` for stable evaluator instructions
+- `evals/rubric.yaml` for weighted criteria, tradeoffs, and non-negotiables
+- `evals/calibration.jsonl` for labeled good/bad examples with rationale
 
 That is why the same outer loop can apply to different kinds of work. Today this repository ships three concrete adapters:
 

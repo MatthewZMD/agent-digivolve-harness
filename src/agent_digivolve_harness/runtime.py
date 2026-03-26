@@ -15,6 +15,8 @@ REQUIRED_FILES = [
     "state.json",
     "evals/checks.yaml",
     "evals/judge.md",
+    "evals/rubric.yaml",
+    "evals/calibration.jsonl",
     "cases/train.jsonl",
     "cases/holdout.jsonl",
     "logs/experiments.tsv",
@@ -38,6 +40,8 @@ def build_next_payload(run_dir: Path) -> dict:
         "state.json",
         "evals/checks.yaml",
         "evals/judge.md",
+        "evals/rubric.yaml",
+        "evals/calibration.jsonl",
         "logs/experiments.tsv",
         "logs/decisions.md",
         str(Path(active_step_path(run_dir)).relative_to(run_dir)),
@@ -55,17 +59,19 @@ def build_next_payload(run_dir: Path) -> dict:
             "allowed_writes": [
                 "evals/checks.yaml",
                 "evals/judge.md",
+                "evals/rubric.yaml",
+                "evals/calibration.jsonl",
                 "cases/train.jsonl",
                 "cases/holdout.jsonl",
                 "state.json",
                 "logs/decisions.md",
             ],
             "success_condition": (
-                "Checks, judge rules, train cases, and holdout cases are ready for baseline."
+                "Checks, judge rules, rubric, calibration examples, train cases, and holdout cases are ready for baseline."
             ),
             "notes": [
                 "Refine evaluation before spending budget on baseline.",
-                "Keep the checks binary and the holdout set distinct from train cases.",
+                "Keep the checks binary, the rubric preference-aware, and the holdout set distinct from train cases.",
             ],
         },
         "awaiting_confirmation": {
@@ -77,10 +83,13 @@ def build_next_payload(run_dir: Path) -> dict:
                 "reports/eval_draft.md",
                 "reports/eval_review.md",
                 "reports/eval_review_prompt.md",
+                "reports/eval_explained.md",
             ],
             "allowed_writes": [
                 "evals/checks.yaml",
                 "evals/judge.md",
+                "evals/rubric.yaml",
+                "evals/calibration.jsonl",
                 "cases/train.jsonl",
                 "cases/holdout.jsonl",
                 "reports/eval_review.md",
@@ -92,7 +101,7 @@ def build_next_payload(run_dir: Path) -> dict:
                 "The user explicitly confirms the eval package, including evaluator strategy, and `confirm_evals` is recorded."
             ),
             "notes": [
-                "Review the current checks, judge, cases, and evaluator strategy with the user before baseline.",
+                "Review the current checks, judge, rubric, calibration examples, cases, and evaluator strategy with the user before baseline.",
                 "Do not start baseline until the user explicitly approves the eval package.",
             ],
         },

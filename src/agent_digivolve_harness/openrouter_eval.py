@@ -139,6 +139,24 @@ def _build_messages(
     raw_output: str,
 ) -> list[dict[str, str]]:
     case = case_bundle["case"]
+    rubric_text = str(case_bundle.get("rubric_text") or "").strip()
+    calibration_summary = str(case_bundle.get("calibration_summary") or "").strip()
+    rubric_block = (
+        "User rubric:\n"
+        "```text\n"
+        f"{rubric_text}\n"
+        "```\n\n"
+        if rubric_text
+        else ""
+    )
+    calibration_block = (
+        "Calibration examples:\n"
+        "```text\n"
+        f"{calibration_summary}\n"
+        "```\n\n"
+        if calibration_summary
+        else ""
+    )
     user_prompt = (
         f"Goal:\n{spec['goal']}\n\n"
         f"Artifact type: {spec['artifact_type']}\n"
@@ -160,6 +178,8 @@ def _build_messages(
         "```text\n"
         f"{judge_prompt}\n"
         "```\n\n"
+        f"{rubric_block}"
+        f"{calibration_block}"
         "Evaluate only this check. Ignore all other possible checks.\n"
         "Return only JSON with this shape: {\"passed\": true|false, \"notes\": \"...\"}."
     )

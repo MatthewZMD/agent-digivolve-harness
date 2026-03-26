@@ -63,7 +63,7 @@ def _phase_summary(
             "headline": "Run Setup In Progress",
             "current_step": active_step.get("summary") or "Define the artifact and evaluation package.",
             "progress_summary": progress_summary,
-            "next_for_codex": "Finish the missing artifact, checks, judge prompt, or cases, then rerun the draft flow.",
+            "next_for_codex": "Finish the missing artifact, checks, judge prompt, rubric, calibration examples, or cases, then rerun the draft flow.",
             "user_update": user_update,
         }
 
@@ -71,11 +71,11 @@ def _phase_summary(
         return {
             "headline": "Waiting For Approval Before Baseline",
             "current_step": active_step.get("summary") or "Review the drafted eval package with the user.",
-            "progress_summary": "The artifact, checks, judge prompt, and cases are ready.",
+            "progress_summary": "The artifact, checks, judge prompt, rubric, calibration examples, and cases are ready.",
             "waiting_for_user": True,
             "waiting_reason": "Baseline cannot start until the user explicitly approves the eval package and evaluator strategy.",
-            "next_for_codex": "Walk the user through the eval package and evaluator strategy, revise them if requested, and only then confirm baseline readiness.",
-            "user_update": "The eval package is drafted and ready for review. The run is waiting for your approval on both the evaluation package and the evaluator strategy before baseline can start.",
+            "next_for_codex": "Walk the user through the eval package, rubric, calibration examples, and evaluator strategy, revise them if requested, and only then confirm baseline readiness.",
+            "user_update": "The eval package is drafted and ready for review. The run is waiting for your approval on the checks, rubric, calibration examples, and evaluator strategy before baseline can start.",
         }
 
     if phase == "ready":

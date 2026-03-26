@@ -119,6 +119,7 @@ def build_case_evaluator_prompt(payload: dict) -> str:
     return (
         f"Independent evaluation for `{case['split']}:{case['id']}` is isolated per check.\n"
         f"Run one evaluator call per check id in `{payload['check_ids']}`.\n"
+        f"Use the user rubric at `{payload['rubric_path']}` and calibration examples at `{payload['calibration_path']}` to keep the evaluation bar aligned with user preferences.\n"
         f"For each check, use the matching prompt from `evaluator_prompts`, record one verdict, and do not let one check influence another.\n"
         f"Each check requires `{contract['panel_size']}` independent verdict(s) via mode `{contract['mode']}` before finalization."
     )
@@ -127,6 +128,8 @@ def build_case_evaluator_prompt(payload: dict) -> str:
 def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
     case = payload["case"]
     contract = payload["evaluation_contract"]
+    rubric_text = (payload.get("rubric_text") or "").strip()
+    calibration_summary = (payload.get("calibration_summary") or "").strip()
     prompts: dict[str, str] = {}
     for unit in payload["evaluation_units"]:
         external_line = None
@@ -141,7 +144,7 @@ def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
         if contract["mode"] == "external_panel":
             external_line = (
                 (external_line + " " if external_line else "")
-                + "If the evaluator does not share this workspace, the caller must inline the raw output, this check definition, and the judge prompt."
+                + "If the evaluator does not share this workspace, the caller must inline the raw output, this check definition, the judge prompt, the rubric, and the calibration examples."
             )
         parts = [
             (
@@ -152,6 +155,8 @@ def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
             "Do not score any other checks. Ignore them completely.",
             f"Read the raw output at `{case['output_file']}`.",
             f"Read the judge prompt at `{payload['judge_path']}`.",
+            f"Read the user rubric at `{payload['rubric_path']}`.",
+            f"Read the calibration examples at `{payload['calibration_path']}`.",
             f"Check question: {unit['question']}",
             f"Pass condition: {unit['pass']}",
             f"Fail condition: {unit['fail']}",
@@ -160,6 +165,10 @@ def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
                 f"This isolated verdict is one of `{contract['panel_size']}` independent verdict(s) "
                 f"required for check `{unit['id']}` via mode `{contract['mode']}`."
             ),
+            ("Rubric excerpt:\n" + rubric_text) if rubric_text and contract["mode"] == "external_panel" else None,
+            ("Calibration examples:\n" + calibration_summary)
+            if calibration_summary and contract["mode"] == "external_panel"
+            else None,
             subagent_line,
             external_line,
         ]
@@ -180,7 +189,8 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Continue the draft phase for run `{packet['run_dir']}`.\n"
             + _plain_language_instruction()
             + "\n"
-            "Materialize the target, checks, judge prompt, and cases so the run can reach `ready`.\n"
+            "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases so the run can reach `ready`.\n"
+            "If the user has not given much preference data yet, still propose the strongest first-pass eval package you can from the goal and artifact type.\n"
             f"{task_lines}\n"
             f"Done when: {packet['done_when']}"
         )
@@ -233,10 +243,12 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             + _plain_language_instruction()
             + "\n"
             + "Before asking for approval, explain the eval package in plain language: what it is testing, why each check exists, "
-            + "why there are both train and holdout cases, and what baseline means.\n"
+            + "what the rubric and calibration examples are doing, why there are both train and holdout cases, and what baseline means.\n"
             + "Do not start baseline until the user explicitly confirms the package.\n"
             + (strategy_block + "\n" if strategy_block else "")
             + "If the evaluator path is not already fixed by the run artifacts, explicitly ask the user to choose it. Do not silently default to `subagent` or `external_panel`.\n"
+            + "If the user has not given much feedback yet, present the current package as your best first-pass proposal and invite correction.\n"
+            + "If the rubric still feels generic, ask the user for better examples of good and bad outputs before baseline.\n"
             + "Discuss these review questions:\n"
             + f"{review_lines}\n"
             + "If the user changes the evaluator path, record that choice with `configure-evaluators` first.\n"

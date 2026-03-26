@@ -37,6 +37,8 @@ V1 should always materialize:
 
 - 3-5 hard checks
 - 1 fixed judge prompt
+- 1 user rubric that captures weighted preference, tradeoffs, and non-negotiables
+- 1 calibration file with labeled examples of good and bad outputs
 - 1 holdout gate
 - a place to store side-information and per-case results
 - a review phase where Codex and the user can refine the eval package before baseline starts
@@ -46,6 +48,8 @@ When the run is not ready yet, `draft-evals` should also materialize draft sugge
 When the run is structurally ready, the harness should pause in an explicit confirmation phase and write review materials that Codex can use to walk the user through:
 
 - whether the checks match the real success criteria
+- whether the rubric captures the right weights, tradeoffs, and non-negotiables
+- whether the calibration examples actually reflect the user's bar
 - whether any check is vague or gameable
 - whether train cases are representative
 - whether holdout cases test transfer
@@ -54,6 +58,8 @@ When the run is structurally ready, the harness should pause in an explicit conf
 - what changes would make the user comfortable saying `start baseline`
 
 This layer is the system bottleneck. If it is weak, the entire loop will optimize for nonsense.
+
+For subjective or taste-sensitive tasks, the rubric and calibration examples are the main mechanism for turning "the user likes this more" into a repeatable evaluation signal without collapsing everything into brittle binary checks.
 
 ### 3. Execution Layer
 

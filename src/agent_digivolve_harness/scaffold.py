@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .coordination import default_active_step
+from .evaluation import design_calibration_examples, design_rubric_template, looks_design_oriented
 from .git_ops import bootstrap_target
 from .models import (
     AcceptanceSpec,
@@ -92,6 +93,11 @@ def create_run_scaffold(run_dir: Path, options: InitOptions) -> RunSpec:
     _write_json(run_dir / "state.json", state.to_dict())
     _write_text(run_dir / "evals" / "checks.yaml", _checks_template(options.artifact_type))
     _write_text(run_dir / "evals" / "judge.md", _judge_template(options.artifact_type))
+    _write_text(run_dir / "evals" / "rubric.yaml", _rubric_template(options.artifact_type, options.goal))
+    _write_text(
+        run_dir / "evals" / "calibration.jsonl",
+        _calibration_template(options.artifact_type, options.goal),
+    )
     _write_text(run_dir / "cases" / "README.md", CASES_README)
     _write_text(run_dir / "cases" / "train.jsonl", "")
     _write_text(run_dir / "cases" / "holdout.jsonl", "")
@@ -194,13 +200,17 @@ def _runbook_template(run_id: str, run_dir: Path) -> str:
         "4. the target object path and repo root from `spec.yaml`\n"
         "5. `evals/checks.yaml`\n"
         "6. `evals/judge.md`\n"
-        "7. `cases/train.jsonl`\n"
-        "8. `cases/holdout.jsonl`\n"
-        "9. `logs/experiments.tsv`\n"
-        "10. `logs/decisions.md`\n\n"
+        "7. `evals/rubric.yaml`\n"
+        "8. `evals/calibration.jsonl`\n"
+        "9. `cases/train.jsonl`\n"
+        "10. `cases/holdout.jsonl`\n"
+        "11. `logs/experiments.tsv`\n"
+        "12. `logs/decisions.md`\n\n"
         "## Operating Rules\n\n"
         "- Keep all state on disk.\n"
         "- Respect `mutation_scope` and `frozen_rules` in `spec.yaml`.\n"
+        "- Use `evals/rubric.yaml` to encode weighted user preferences, tradeoffs, and non-negotiables.\n"
+        "- Use `evals/calibration.jsonl` to preserve user-labeled examples of good and bad outputs.\n"
         "- Review and confirm the eval package before baseline when confirmation is required.\n"
         "- Every evaluation must come from an independent evaluator. Do not self-grade the executed case.\n"
         "- Run a baseline before any optimization.\n"
@@ -289,6 +299,162 @@ def _judge_template(artifact_type: str) -> str:
         "- regressions in clarity, usefulness, or correctness\n"
         "- whether the candidate would still look good on unseen cases\n"
     )
+
+
+def _rubric_template(artifact_type: str, goal: str) -> str:
+    if artifact_type == "repo-task" and looks_design_oriented(goal):
+        return dump_yaml(design_rubric_template()) + "\n"
+
+    templates = {
+        "document-copy": {
+            "criteria": [
+                {
+                    "id": "specificity_and_truthfulness",
+                    "weight": 3,
+                    "priority": "must",
+                    "guidance": "Prefer concrete, truthful copy with verifiable detail over generic marketing language.",
+                },
+                {
+                    "id": "clarity_and_flow",
+                    "weight": 2,
+                    "priority": "should",
+                    "guidance": "Prefer clean narrative flow and readable structure over clever but confusing phrasing.",
+                },
+                {
+                    "id": "cta_strength",
+                    "weight": 2,
+                    "priority": "should",
+                    "guidance": "Prefer a specific next step that feels credible and relevant.",
+                },
+            ],
+            "non_negotiables": [
+                "Do not invent product facts, testimonials, or customer names.",
+                "Prefer credible specificity over hype.",
+            ],
+            "tradeoffs": [
+                "If specificity conflicts with flourish, prefer specificity.",
+                "If brevity conflicts with clarity, prefer clarity.",
+            ],
+        },
+        "prompt": {
+            "criteria": [
+                {
+                    "id": "task_success",
+                    "weight": 3,
+                    "priority": "must",
+                    "guidance": "Prefer outputs that solve the user's actual request directly.",
+                },
+                {
+                    "id": "constraint_integrity",
+                    "weight": 3,
+                    "priority": "must",
+                    "guidance": "Prefer outputs that preserve explicit rules and required format exactly.",
+                },
+                {
+                    "id": "clarity_and_directness",
+                    "weight": 2,
+                    "priority": "should",
+                    "guidance": "Prefer concise, readable outputs over bloated or ornamental phrasing.",
+                },
+            ],
+            "non_negotiables": [
+                "Do not weaken explicit safety or refusal rules.",
+                "Do not trade correctness for style.",
+            ],
+            "tradeoffs": [
+                "If brevity conflicts with correctness, prefer correctness.",
+                "If polish conflicts with strict format compliance, prefer format compliance.",
+            ],
+        },
+        "repo-task": {
+            "criteria": [
+                {
+                    "id": "task_completion",
+                    "weight": 3,
+                    "priority": "must",
+                    "guidance": "Prefer end-to-end task completion over partial progress that only looks plausible.",
+                },
+                {
+                    "id": "verification_depth",
+                    "weight": 3,
+                    "priority": "must",
+                    "guidance": "Prefer concrete tests or runtime evidence over unsupported claims of success.",
+                },
+                {
+                    "id": "scope_and_maintainability",
+                    "weight": 2,
+                    "priority": "should",
+                    "guidance": "Prefer minimal, relevant changes that preserve code quality and repository boundaries.",
+                },
+            ],
+            "non_negotiables": [
+                "Do not claim a fix without evidence.",
+                "Do not change unrelated files or behavior.",
+            ],
+            "tradeoffs": [
+                "If speed conflicts with verification, prefer verification.",
+                "If adding code conflicts with keeping scope tight, prefer the narrower change.",
+            ],
+        },
+    }
+    return dump_yaml(templates[artifact_type]) + "\n"
+
+
+def _calibration_template(artifact_type: str, goal: str) -> str:
+    if artifact_type == "repo-task" and looks_design_oriented(goal):
+        return "\n".join(json.dumps(row) for row in design_calibration_examples()) + "\n"
+
+    templates = {
+        "document-copy": [
+            {
+                "id": "good-1",
+                "label": "good",
+                "input": "Write a short product intro.",
+                "output": "Track every clinic handoff with a shared timeline, audit trail, and one-click follow-up reminders.",
+                "why": "Concrete and credible. It names specific capabilities without inventing outcomes.",
+            },
+            {
+                "id": "bad-1",
+                "label": "bad",
+                "input": "Write a short product intro.",
+                "output": "Transform your workflow with a revolutionary platform built for the future.",
+                "why": "Generic hype. It says almost nothing verifiable.",
+            },
+        ],
+        "prompt": [
+            {
+                "id": "good-1",
+                "label": "good",
+                "input": "Answer in 3 bullets.",
+                "output": "- Point one\n- Point two\n- Point three",
+                "why": "Follows the required format exactly and stays direct.",
+            },
+            {
+                "id": "bad-1",
+                "label": "bad",
+                "input": "Answer in 3 bullets.",
+                "output": "Here is a detailed explanation with several paragraphs and no bullets.",
+                "why": "Misses the requested format and adds filler.",
+            },
+        ],
+        "repo-task": [
+            {
+                "id": "good-1",
+                "label": "good",
+                "input": "Fix the failing endpoint.",
+                "output": "Changed the route handler, added a regression test, and verified it with `pytest tests/api/test_routes.py`.",
+                "why": "Completes the task and includes verification evidence.",
+            },
+            {
+                "id": "bad-1",
+                "label": "bad",
+                "input": "Fix the failing endpoint.",
+                "output": "I believe this should now work after some cleanup.",
+                "why": "No evidence, vague scope, and no concrete confirmation.",
+            },
+        ],
+    }
+    return "\n".join(json.dumps(row) for row in templates[artifact_type]) + "\n"
 
 
 def _default_external_agents(evaluator_mode: str, panel_size: int) -> list[str]:

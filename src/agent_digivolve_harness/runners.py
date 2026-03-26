@@ -11,7 +11,16 @@ from .agent_prompts import (
     build_runner_agent_prompt,
     build_runner_execution_steps,
 )
-from .evaluation import load_check_ids, load_checks
+from .evaluation import (
+    calibration_file,
+    excerpt_text,
+    format_calibration_examples,
+    load_calibration_examples,
+    load_check_ids,
+    load_checks,
+    load_support_text,
+    rubric_file,
+)
 
 
 def build_runner_payload(
@@ -33,8 +42,12 @@ def build_runner_payload(
     summary_path = str((run_dir / manifest["summary_file"]).resolve())
     checks_path = str((run_dir / spec["evaluation"]["checks_file"]).resolve())
     judge_path = str((run_dir / spec["evaluation"]["judge_file"]).resolve())
+    rubric_path = str((run_dir / rubric_file(spec)).resolve())
+    calibration_path = str((run_dir / calibration_file(spec)).resolve())
     checks = load_checks(run_dir / spec["evaluation"]["checks_file"])
     check_ids = load_check_ids(run_dir / spec["evaluation"]["checks_file"])
+    rubric_text = load_support_text(run_dir / rubric_file(spec))
+    calibration_examples = load_calibration_examples(run_dir / calibration_file(spec), limit=3)
     evaluation_contract = _evaluation_contract(spec)
     workspace = _workspace_payload(
         run_dir,
@@ -57,7 +70,12 @@ def build_runner_payload(
         "repository_path": repository_path,
         "checks_path": checks_path,
         "judge_path": judge_path,
+        "rubric_path": rubric_path,
+        "calibration_path": calibration_path,
         "checks": checks,
+        "rubric_text": excerpt_text(rubric_text, limit=2000),
+        "calibration_examples": calibration_examples,
+        "calibration_summary": format_calibration_examples(calibration_examples),
         "summary_path": summary_path,
         "check_ids": check_ids,
         "per_case_max_score": len(check_ids),
@@ -172,7 +190,12 @@ def build_case_payload(runner_payload: dict, case: dict) -> dict:
         "repository_path": runner_payload["repository_path"],
         "checks_path": runner_payload["checks_path"],
         "judge_path": runner_payload["judge_path"],
+        "rubric_path": runner_payload["rubric_path"],
+        "calibration_path": runner_payload["calibration_path"],
         "checks": runner_payload["checks"],
+        "rubric_text": runner_payload.get("rubric_text", ""),
+        "calibration_examples": runner_payload.get("calibration_examples", []),
+        "calibration_summary": runner_payload.get("calibration_summary", ""),
         "summary_path": runner_payload["summary_path"],
         "check_ids": runner_payload["check_ids"],
         "per_case_max_score": runner_payload["per_case_max_score"],
@@ -250,7 +273,7 @@ def _instructions(
 ) -> list[str]:
     common = [
         "Read the manifest and treat it as the source of truth for case execution.",
-        "Read the checks file and judge prompt before delegating evaluation.",
+        "Read the checks file, judge prompt, rubric, and calibration examples before delegating evaluation.",
         "Fill every case output and score file before finalizing the experiment.",
         "Keep execution deterministic and consistent across train and holdout cases.",
     ]
@@ -302,6 +325,8 @@ def _render_runner_markdown(payload: dict) -> str:
     lines += [
         f"- checks_path: `{payload['checks_path']}`",
         f"- judge_path: `{payload['judge_path']}`",
+        f"- rubric_path: `{payload['rubric_path']}`",
+        f"- calibration_path: `{payload['calibration_path']}`",
         f"- summary_path: `{payload['summary_path']}`",
         f"- check_ids: `{payload['check_ids']}`",
         f"- per_case_max_score: `{payload['per_case_max_score']}`",
@@ -435,6 +460,8 @@ def _render_case_markdown(payload: dict) -> str:
         "",
         f"- checks_path: `{payload['checks_path']}`",
         f"- judge_path: `{payload['judge_path']}`",
+        f"- rubric_path: `{payload['rubric_path']}`",
+        f"- calibration_path: `{payload['calibration_path']}`",
         f"- check_ids: `{payload['check_ids']}`",
         f"- max_score: `{payload['per_case_max_score']}`",
         f"- evaluation_mode: `{payload['evaluation_contract']['mode']}`",

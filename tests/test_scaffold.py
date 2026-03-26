@@ -289,6 +289,55 @@ class ScaffoldTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        (run_dir / "evals" / "rubric.yaml").write_text(
+            "\n".join(
+                [
+                    "criteria:",
+                    "  -",
+                    "    id: task_success",
+                    "    weight: 3",
+                    "    priority: must",
+                    "    guidance: Prefer outputs that solve the user's request directly.",
+                    "  -",
+                    "    id: directness",
+                    "    weight: 2",
+                    "    priority: should",
+                    "    guidance: Prefer concise answers over filler.",
+                    "non_negotiables:",
+                    "  - Do not break explicit prompt constraints.",
+                    "tradeoffs:",
+                    "  - If brevity conflicts with correctness, prefer correctness.",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "evals" / "calibration.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "id": "good-1",
+                            "label": "good",
+                            "input": "Answer in 3 bullets.",
+                            "output": "- One\n- Two\n- Three",
+                            "why": "Exact format, direct, and easy to scan.",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "id": "bad-1",
+                            "label": "bad",
+                            "input": "Answer in 3 bullets.",
+                            "output": "Here is a long paragraph with no bullets.",
+                            "why": "Misses the requested format and adds filler.",
+                        }
+                    ),
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
         (run_dir / "cases" / "train.jsonl").write_text(
             "\n".join(
                 [
@@ -350,10 +399,14 @@ class ScaffoldTests(unittest.TestCase):
             self.assertTrue((run_dir / "state.json").exists())
             self.assertTrue(self._target_path(run_dir).exists())
             self.assertTrue((run_dir / "logs" / "experiments.tsv").exists())
+            self.assertTrue((run_dir / "evals" / "rubric.yaml").exists())
+            self.assertTrue((run_dir / "evals" / "calibration.jsonl").exists())
 
             spec_text = (run_dir / "spec.yaml").read_text(encoding="utf-8")
             self.assertIn("artifact_type: document-copy", spec_text)
             self.assertIn("run_id: demo", spec_text)
+            self.assertIn("rubric_file: evals/rubric.yaml", spec_text)
+            self.assertIn("calibration_file: evals/calibration.jsonl", spec_text)
 
     def test_copy_existing_prompt_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -373,6 +426,26 @@ class ScaffoldTests(unittest.TestCase):
             target_path = self._target_path(run_dir)
             self.assertEqual(target_path, source.resolve())
             self.assertEqual(target_path.read_text(encoding="utf-8"), source.read_text(encoding="utf-8"))
+
+    def test_design_focused_repo_task_scaffolds_design_rubric(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = resolve_run_dir(Path(tmpdir) / "runs" / "design-repo-task")
+            create_run_scaffold(
+                run_dir,
+                InitOptions(
+                    goal="Improve the frontend design and UX of the landing page.",
+                    artifact_type="repo-task",
+                ),
+            )
+
+            rubric_text = (run_dir / "evals" / "rubric.yaml").read_text(encoding="utf-8")
+            calibration_text = (run_dir / "evals" / "calibration.jsonl").read_text(encoding="utf-8")
+
+            self.assertIn("id: design_quality", rubric_text)
+            self.assertIn("id: originality", rubric_text)
+            self.assertIn("id: craft", rubric_text)
+            self.assertIn("id: functionality", rubric_text)
+            self.assertIn("purple gradient", calibration_text)
 
     def test_next_reports_draft_before_cases_are_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -447,7 +520,12 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(payload["work_type"], "draft_eval_setup")
             self.assertTrue(any(path.endswith("checks.draft.yaml") for path in payload["suggestion_files"]))
             self.assertTrue(any(task["type"] == "train_cases" for task in payload["tasks"]))
-            self.assertIn("Materialize the target, checks, judge prompt, and cases", payload["agent_prompt"])
+            self.assertTrue(any(task["type"] == "rubric" for task in payload["tasks"]))
+            self.assertTrue(any(task["type"] == "calibration" for task in payload["tasks"]))
+            self.assertIn(
+                "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases",
+                payload["agent_prompt"],
+            )
 
     def test_next_reports_ready_when_cases_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -531,10 +609,16 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("## Evaluator Strategy", review_text)
             self.assertIn("built-in subagent", review_text)
             self.assertIn("host_system: `codex`", review_text)
+            self.assertIn("## User Rubric", review_text)
+            self.assertIn("## Calibration Examples", review_text)
             self.assertIn("explain the eval package in plain language", prompt_text)
             self.assertIn("evaluator strategy", prompt_text)
+            self.assertIn("what the rubric is encoding", prompt_text)
+            self.assertIn("calibration examples", prompt_text)
             self.assertIn("## What Baseline Means", explained_text)
             self.assertIn("## Why There Are Holdout Cases", explained_text)
+            self.assertIn("## What The Rubric Is Doing", explained_text)
+            self.assertIn("## Why There Are Calibration Examples", explained_text)
 
     def test_confirm_evals_advances_to_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -567,6 +651,8 @@ class ScaffoldTests(unittest.TestCase):
             )
             self.assertTrue(any(path.endswith("reports/eval_review.md") for path in payload["review_files"]))
             self.assertTrue(any(path.endswith("reports/eval_explained.md") for path in payload["review_files"]))
+            self.assertTrue(any(path.endswith("evals/rubric.yaml") for path in payload["review_files"]))
+            self.assertTrue(any(path.endswith("evals/calibration.jsonl") for path in payload["review_files"]))
             self.assertEqual(payload["evaluator_strategy"]["mode"], "subagent")
             self.assertEqual(payload["evaluator_strategy"]["host_system"], "codex")
             self.assertEqual(payload["evaluator_options"][0]["mode"], "subagent")
@@ -577,8 +663,10 @@ class ScaffoldTests(unittest.TestCase):
             )
             self.assertIn("start baseline", payload["agent_prompt"])
             self.assertIn("Do not silently default to `subagent` or `external_panel`", payload["agent_prompt"])
+            self.assertIn("calibration examples", payload["agent_prompt"])
             self.assertIn("explicitly ask the user to choose it", "\n".join(payload["execution_steps"]))
             self.assertIn("external panel", "\n".join(payload["review_questions"]))
+            self.assertIn("good and bad output", "\n".join(payload["review_questions"]))
             self.assertTrue(
                 any(command.startswith("digivolve confirm-evals") for command in payload["recommended_commands"])
             )
@@ -707,6 +795,9 @@ class ScaffoldTests(unittest.TestCase):
             self.assertTrue(payload["ready_to_finalize"])
             self.assertEqual(payload["models"], ["openai/gpt-5.4", "anthropic/claude-sonnet-4.5"])
             self.assertTrue(Path(payload["records"][0]["trace_path"]).exists())
+            first_request = post_request.call_args_list[0].args[0]
+            self.assertIn("User rubric", first_request["messages"][1]["content"])
+            self.assertIn("Calibration examples", first_request["messages"][1]["content"])
 
             evals_payload = list_case_evaluations(run_dir, "train-1", split="train", experiment_id=0)
             self.assertEqual(evals_payload["recorded_verdicts"], 6)
@@ -869,6 +960,9 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(runner_payload["adapter"], "prompt_runner")
             self.assertTrue(any("Use the current committed target as-is" in step for step in runner_payload["execution_steps"]))
             self.assertIn("Follow these steps exactly:", runner_payload["agent_prompt"])
+            self.assertTrue(runner_payload["rubric_path"].endswith("evals/rubric.yaml"))
+            self.assertTrue(runner_payload["calibration_path"].endswith("evals/calibration.jsonl"))
+            self.assertIn("Example 1:", runner_payload["calibration_summary"])
 
             cases_payload = list_cases(run_dir)
             self.assertEqual(cases_payload["total_cases"], 5)
@@ -882,6 +976,8 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("Do not mutate the artifact during this case", case_payload["case"]["agent_prompt"])
             self.assertIn("Do not self-score", case_payload["case"]["execution_steps"][-1])
             self.assertIn("isolated per check", case_payload["case"]["evaluator_prompt"])
+            self.assertIn("rubric", case_payload["case"]["evaluator_prompt"])
+            self.assertIn("calibration examples", case_payload["case"]["evaluator_prompt"])
             self.assertEqual(
                 sorted(case_payload["case"]["evaluator_prompts"]),
                 ["clarity", "constraints", "format"],
@@ -890,6 +986,7 @@ class ScaffoldTests(unittest.TestCase):
                 "Independently evaluate only check `format`",
                 case_payload["case"]["evaluator_prompts"]["format"],
             )
+            self.assertIn("Read the user rubric", case_payload["case"]["evaluator_prompts"]["format"])
 
     def test_validate_case_reports_incomplete_and_complete_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1841,7 +1938,12 @@ class ScaffoldTests(unittest.TestCase):
             "repository_path": "/tmp",
             "checks_path": "/tmp/checks.yaml",
             "judge_path": "/tmp/judge.md",
+            "rubric_path": "/tmp/rubric.yaml",
+            "calibration_path": "/tmp/calibration.jsonl",
             "checks": [],
+            "rubric_text": "criteria:\n  - id: groundedness",
+            "calibration_examples": [],
+            "calibration_summary": "- no calibration examples loaded",
             "summary_path": "/tmp/summary.json",
             "check_ids": ["quality"],
             "per_case_max_score": 1,

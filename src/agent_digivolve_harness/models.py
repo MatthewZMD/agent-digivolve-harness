@@ -38,6 +38,8 @@ class GitState:
 class EvaluationSpec:
     checks_file: str = "evals/checks.yaml"
     judge_file: str = "evals/judge.md"
+    rubric_file: str = "evals/rubric.yaml"
+    calibration_file: str = "evals/calibration.jsonl"
     holdout_required: bool = True
     require_confirmation: bool = True
     evaluator_mode: str = "subagent"

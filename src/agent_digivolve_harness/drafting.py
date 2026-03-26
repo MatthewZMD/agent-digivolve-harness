@@ -3,9 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .evaluation import load_checks
+from .evaluation import (
+    calibration_file,
+    design_calibration_examples,
+    design_rubric_template,
+    format_calibration_examples,
+    load_calibration_examples,
+    load_checks,
+    load_support_text,
+    looks_design_oriented,
+    rubric_file,
+)
 from .readiness import assess_run_readiness, readiness_recommendations
 from .workspace import load_run_spec, load_run_state, resolve_run_dir, save_run_state
+from .yaml_utils import dump_yaml
 
 
 def draft_evals(run_dir: Path) -> dict:
@@ -16,17 +27,29 @@ def draft_evals(run_dir: Path) -> dict:
     ready_for_baseline = readiness["ready_for_baseline"]
     require_confirmation = spec.get("evaluation", {}).get("require_confirmation", True)
     artifact_preview = _artifact_preview(run_dir, spec)
+    rubric_text = load_support_text(run_dir / rubric_file(spec))
+    calibration_examples = load_calibration_examples(run_dir / calibration_file(spec), limit=3)
     suggestion_files = _write_draft_suggestions(run_dir, spec, readiness, artifact_preview)
 
     report_path = run_dir / "reports" / "eval_draft.md"
     report_path.write_text(
-        _build_eval_draft_report(run_dir, spec, readiness, artifact_preview, suggestion_files),
+        _build_eval_draft_report(
+            run_dir,
+            spec,
+            readiness,
+            artifact_preview,
+            suggestion_files,
+            rubric_text=rubric_text,
+            calibration_examples=calibration_examples,
+        ),
         encoding="utf-8",
     )
     review_files = _write_eval_review_materials(
         run_dir,
         spec,
         readiness,
+        rubric_text=rubric_text,
+        calibration_examples=calibration_examples,
         ready_for_baseline=ready_for_baseline,
         require_confirmation=require_confirmation,
     )
@@ -70,6 +93,9 @@ def _build_eval_draft_report(
     readiness: dict[str, object],
     artifact_preview: str,
     suggestion_files: list[Path],
+    *,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
 ) -> str:
     recommendations = "\n".join(
         f"- {item}" for item in readiness_recommendations(readiness)
@@ -100,11 +126,24 @@ def _build_eval_draft_report(
         f"{recommendations}\n\n"
         "## Draft Files\n\n"
         f"{suggestions}\n\n"
+        "## User Calibration Files\n\n"
+        f"- rubric: `{rubric_file(spec)}`\n"
+        f"- calibration: `{calibration_file(spec)}`\n\n"
+        "These files exist to encode user preference, tradeoffs, and labeled examples before baseline.\n\n"
+        "## Rubric Preview\n\n"
+        f"```text\n{rubric_text or '<rubric file missing>'}\n```\n\n"
+        "## Calibration Examples\n\n"
+        f"{format_calibration_examples(calibration_examples)}\n\n"
         "## Artifact Preview\n\n"
         f"```text\n{artifact_preview}\n```\n\n"
         "## Drafting Rules\n\n"
         "- Keep checks binary.\n"
         "- Aim for 3-5 checks total.\n"
+        "- If user guidance is sparse, still propose a best-effort eval package derived from the goal and artifact type.\n"
+        "- For subjective tasks, break quality into several parts instead of one vague overall score.\n"
+        "- For design-heavy tasks, a strong first-pass rubric often separates design quality, originality, craft, and functionality.\n"
+        "- Use the rubric to capture weighted preferences, tradeoffs, and non-negotiables.\n"
+        "- Use calibration examples to show what good and bad look like in practice.\n"
         "- Keep holdout distinct from train cases.\n"
         "- Use the judge prompt to catch checklist gaming and regressions in quality.\n"
     )
@@ -154,6 +193,14 @@ def _write_draft_suggestions(
         path = run_dir / "cases" / "holdout.draft.jsonl"
         path.write_text(_cases_draft(spec, artifact_preview, split="holdout"), encoding="utf-8")
         written.append(path)
+    rubric_path = run_dir / rubric_file(spec)
+    if not rubric_path.exists():
+        rubric_path.write_text(_rubric_draft(spec), encoding="utf-8")
+        written.append(rubric_path)
+    calibration_path = run_dir / calibration_file(spec)
+    if not calibration_path.exists():
+        calibration_path.write_text(_calibration_draft(spec), encoding="utf-8")
+        written.append(calibration_path)
 
     return written
 
@@ -163,6 +210,8 @@ def _write_eval_review_materials(
     spec: dict,
     readiness: dict[str, object],
     *,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
     ready_for_baseline: bool,
     require_confirmation: bool,
 ) -> list[Path]:
@@ -177,15 +226,36 @@ def _write_eval_review_materials(
     explained_path = run_dir / "reports" / "eval_explained.md"
 
     review_path.write_text(
-        _build_eval_review_report(spec, checks, train_cases, holdout_cases),
+        _build_eval_review_report(
+            spec,
+            checks,
+            train_cases,
+            holdout_cases,
+            rubric_text=rubric_text,
+            calibration_examples=calibration_examples,
+        ),
         encoding="utf-8",
     )
     prompt_path.write_text(
-        _build_eval_review_prompt(spec, checks, train_cases, holdout_cases),
+        _build_eval_review_prompt(
+            spec,
+            checks,
+            train_cases,
+            holdout_cases,
+            rubric_text=rubric_text,
+            calibration_examples=calibration_examples,
+        ),
         encoding="utf-8",
     )
     explained_path.write_text(
-        _build_eval_explained_report(spec, checks, train_cases, holdout_cases),
+        _build_eval_explained_report(
+            spec,
+            checks,
+            train_cases,
+            holdout_cases,
+            rubric_text=rubric_text,
+            calibration_examples=calibration_examples,
+        ),
         encoding="utf-8",
     )
     return [review_path, prompt_path, explained_path]
@@ -233,6 +303,47 @@ def _cases_draft(spec: dict, artifact_preview: str, *, split: str) -> str:
     return "\n".join(rows) + "\n"
 
 
+def _rubric_draft(spec: dict) -> str:
+    if spec["artifact_type"] == "repo-task" and looks_design_oriented(spec["goal"]):
+        return dump_yaml(design_rubric_template()) + "\n"
+
+    return (
+        "criteria:\n"
+        "  -\n"
+        "    id: primary_success\n"
+        "    weight: 3\n"
+        "    priority: must\n"
+        "    guidance: Replace this with the main thing the user values most.\n"
+        "non_negotiables:\n"
+        "  - Replace this with a hard constraint the evaluator must never ignore.\n"
+        "tradeoffs:\n"
+        "  - Replace this with a concrete tradeoff rule such as correctness over style.\n"
+    )
+
+
+def _calibration_draft(spec: dict) -> str:
+    if spec["artifact_type"] == "repo-task" and looks_design_oriented(spec["goal"]):
+        return "\n".join(json.dumps(row) for row in design_calibration_examples()) + "\n"
+
+    rows = [
+        {
+            "id": "good-1",
+            "label": "good",
+            "input": f"Representative request aligned to: {spec['goal']}",
+            "output": "Replace this with a short example the user would consider strong.",
+            "why": "Explain specifically why this is good.",
+        },
+        {
+            "id": "bad-1",
+            "label": "bad",
+            "input": f"Representative request aligned to: {spec['goal']}",
+            "output": "Replace this with a short example the user would consider weak.",
+            "why": "Explain specifically why this is bad.",
+        },
+    ]
+    return "\n".join(json.dumps(row) for row in rows) + "\n"
+
+
 def _load_case_inputs(path: Path) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     if not path.exists():
@@ -251,6 +362,9 @@ def _build_eval_review_report(
     checks: list[dict[str, str]],
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
+    *,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
 ) -> str:
     check_lines = "\n".join(
         f"- `{check['id']}`: {check['question']}"
@@ -272,6 +386,10 @@ def _build_eval_review_report(
         f"{spec['goal']}\n\n"
         "## Current Checks\n\n"
         f"{check_lines}\n\n"
+        "## User Rubric\n\n"
+        f"```text\n{rubric_text or '<rubric file missing>'}\n```\n\n"
+        "## Calibration Examples\n\n"
+        f"{format_calibration_examples(calibration_examples)}\n\n"
         "## Train Cases\n\n"
         f"{train_lines}\n\n"
         "## Holdout Cases\n\n"
@@ -280,6 +398,9 @@ def _build_eval_review_report(
         f"{_evaluator_review_block(spec)}\n\n"
         "## Review Angles\n\n"
         "- Do these checks reflect what success actually means to the user?\n"
+        "- If the user has not given much guidance yet, is this still the best reasonable first-pass eval package?\n"
+        "- Does the rubric encode the right weights, tradeoffs, and non-negotiables?\n"
+        "- Do the calibration examples capture the user's bar for good and bad output?\n"
         "- Could the artifact game any check without truly improving?\n"
         "- Do the train cases reflect common usage rather than just easy cases?\n"
         "- Do the holdout cases test transfer rather than repetition?\n"
@@ -294,6 +415,9 @@ def _build_eval_review_prompt(
     checks: list[dict[str, str]],
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
+    *,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
 ) -> str:
     check_lines = "\n".join(
         f"- {check['id']}: {check['question']}"
@@ -314,10 +438,17 @@ def _build_eval_review_prompt(
         "Before asking for approval, explain the eval package in plain language:\n"
         "- what this eval is actually testing\n"
         "- why each check exists\n"
+        "- what the rubric is encoding about user preference and tradeoffs\n"
+        "- what the calibration examples are teaching the evaluator about good and bad output\n"
         "- why there are both train and holdout cases\n"
         "- what baseline means in this run\n\n"
+        "If the user has not said much yet, present this as a best-effort starting point rather than pretending the preferences are already known.\n\n"
         "Checks:\n"
         f"{check_lines}\n\n"
+        "Rubric:\n"
+        f"{rubric_text or '<rubric file missing>'}\n\n"
+        "Calibration examples:\n"
+        f"{format_calibration_examples(calibration_examples)}\n\n"
         "Train cases:\n"
         f"{train_lines}\n\n"
         "Holdout cases:\n"
@@ -329,6 +460,9 @@ def _build_eval_review_prompt(
         "1. what to change in the checks, judge, cases, or evaluator strategy\n"
         "2. or explicitly say `start baseline`\n\n"
         "I should also suggest improvements from several angles:\n"
+        "- whether the package needs a better first-pass decomposition into parts of quality\n"
+        "- missing user preferences, non-negotiables, or tradeoffs in the rubric\n"
+        "- calibration examples that are too generic, too easy, or mislabeled\n"
         "- missing failure modes\n"
         "- overfitting risk\n"
         "- checks that are too vague or too gameable\n"
@@ -343,6 +477,9 @@ def _build_eval_explained_report(
     checks: list[dict[str, str]],
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
+    *,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
 ) -> str:
     check_lines = "\n".join(
         (
@@ -370,6 +507,15 @@ def _build_eval_explained_report(
         "inventing facts, gaming the checks, or only looking good on one easy prompt.\n\n"
         "## What The Checks Are Really Testing\n\n"
         f"{check_lines}\n\n"
+        "## What The Rubric Is Doing\n\n"
+        "The rubric is where weighted user preference lives. It tells the evaluator which qualities matter most, "
+        "which tradeoffs to make when signals conflict, and which failures are unacceptable even if the hard checks pass.\n\n"
+        "When the user has not given much guidance yet, the rubric should still be a serious first-pass proposal rather than an empty placeholder.\n\n"
+        f"```text\n{rubric_text or '<rubric file missing>'}\n```\n\n"
+        "## Why There Are Calibration Examples\n\n"
+        "Calibration examples are small labeled examples of good and bad outputs. They make the evaluation bar less abstract "
+        "by showing the evaluator what the user actually likes, dislikes, and considers unacceptable.\n\n"
+        f"{format_calibration_examples(calibration_examples)}\n\n"
         "## Why There Are Train Cases\n\n"
         "Train cases are the common situations we expect the artifact to handle well. They are where we "
         "want improvement to show up clearly if a change is actually useful.\n\n"

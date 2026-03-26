@@ -68,6 +68,16 @@ def _draft_packet(run_dir: Path, next_payload: dict) -> dict:
             else None,
         },
         {
+            "type": "rubric",
+            "instruction": "Refine evals/rubric.yaml into weighted criteria, tradeoffs, and non-negotiables that reflect user preferences.",
+            "target": str((run_dir / "evals" / "rubric.yaml").resolve()),
+        },
+        {
+            "type": "calibration",
+            "instruction": "Populate evals/calibration.jsonl with a few labeled good/bad examples and brief rationales that calibrate evaluator taste.",
+            "target": str((run_dir / "evals" / "calibration.jsonl").resolve()),
+        },
+        {
             "type": "train_cases",
             "instruction": "Populate cases/train.jsonl with at least 3 representative train cases.",
             "target": str((run_dir / "cases" / "train.jsonl").resolve()),
@@ -216,11 +226,15 @@ def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
         run_dir / "reports" / "eval_explained.md",
         run_dir / "evals" / "checks.yaml",
         run_dir / "evals" / "judge.md",
+        run_dir / "evals" / "rubric.yaml",
+        run_dir / "evals" / "calibration.jsonl",
         run_dir / "cases" / "train.jsonl",
         run_dir / "cases" / "holdout.jsonl",
     ]
     review_questions = [
         "Do these checks match what success means to the user?",
+        "Does the rubric encode the right weights, tradeoffs, and non-negotiables?",
+        "Do the calibration examples capture what the user considers good and bad output?",
         "Could the artifact game any check without truly improving?",
         "Are the train cases representative of common usage?",
         "Are the holdout cases distinct enough to test transfer?",
@@ -248,9 +262,9 @@ def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
     }
     packet["execution_steps"] = [
         "Explain the eval package to the user in plain language before asking for approval.",
-        "Summarize the current checks, judge prompt, cases, and evaluator strategy for the user.",
+        "Summarize the current checks, judge prompt, rubric, calibration examples, cases, and evaluator strategy for the user.",
         "If the evaluator path is not already fixed by the run artifacts, explicitly ask the user to choose it before proceeding.",
-        "Suggest stronger alternatives or missing failure modes from multiple angles.",
+        "Suggest stronger alternatives, missing failure modes, and better calibration examples from multiple angles.",
         "Wait for explicit user approval before baseline.",
         "If the user requests edits, revise the eval files and rerun `draft-evals`.",
         "When the user explicitly approves, run `confirm-evals`.",
