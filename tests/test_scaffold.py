@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -38,6 +40,7 @@ from agent_digivolve_harness.interventions import (
 )
 from agent_digivolve_harness.models import InitOptions
 import agent_digivolve_harness.baseline as baseline_module
+import agent_digivolve_harness.scaffold as scaffold_module
 from agent_digivolve_harness.baseline import finalize_baseline, prepare_baseline
 from agent_digivolve_harness.journal import load_journal_entries
 from agent_digivolve_harness.loop import run_loop
@@ -408,6 +411,63 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("run_id: demo", spec_text)
             self.assertIn("rubric_file: evals/rubric.yaml", spec_text)
             self.assertIn("calibration_file: evals/calibration.jsonl", spec_text)
+
+    def test_build_next_payload_waits_for_init_to_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = resolve_run_dir(Path(tmpdir) / "runs" / "race-run")
+            write_started = threading.Event()
+            release_write = threading.Event()
+            init_done = threading.Event()
+            original_write_text = scaffold_module._write_text
+            payload_holder: dict[str, object] = {}
+            error_holder: dict[str, BaseException] = {}
+
+            def blocking_write_text(path: Path, contents: str) -> None:
+                if path.name == "runbook.md" and not write_started.is_set():
+                    write_started.set()
+                    release_write.wait(timeout=5)
+                original_write_text(path, contents)
+
+            def init_run() -> None:
+                try:
+                    create_run_scaffold(
+                        run_dir,
+                        InitOptions(
+                            goal="Improve the prompt.",
+                            artifact_type="prompt",
+                        ),
+                    )
+                except BaseException as exc:  # pragma: no cover - test failure path
+                    error_holder["init"] = exc
+                finally:
+                    init_done.set()
+
+            def load_payload() -> None:
+                try:
+                    payload_holder["payload"] = build_next_payload(run_dir)
+                except BaseException as exc:  # pragma: no cover - test failure path
+                    error_holder["payload"] = exc
+
+            with mock.patch.object(scaffold_module, "_write_text", side_effect=blocking_write_text):
+                init_thread = threading.Thread(target=init_run)
+                init_thread.start()
+                self.assertTrue(write_started.wait(timeout=5))
+
+                payload_thread = threading.Thread(target=load_payload)
+                payload_thread.start()
+                time.sleep(0.1)
+
+                self.assertTrue(payload_thread.is_alive())
+                self.assertFalse(run_dir.exists())
+
+                release_write.set()
+                init_thread.join(timeout=5)
+                payload_thread.join(timeout=5)
+
+            self.assertTrue(init_done.is_set())
+            self.assertNotIn("init", error_holder)
+            self.assertNotIn("payload", error_holder)
+            self.assertEqual(payload_holder["payload"]["phase"], "draft")
 
     def test_copy_existing_prompt_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import uuid
 from pathlib import Path
 
 from .coordination import default_active_step
@@ -19,7 +22,7 @@ from .models import (
     TargetRef,
 )
 from .yaml_utils import dump_yaml
-from .workspace import resolve_run_dir
+from .workspace import init_sentinel_path, resolve_run_dir
 
 
 DIRECTORIES = [
@@ -36,14 +39,35 @@ DIRECTORIES = [
 
 def create_run_scaffold(run_dir: Path, options: InitOptions) -> RunSpec:
     run_dir = resolve_run_dir(run_dir)
-    if run_dir.exists() and any(run_dir.iterdir()):
-        raise FileExistsError(f"Run directory already exists and is not empty: {run_dir}")
+    run_dir.parent.mkdir(parents=True, exist_ok=True)
+    sentinel_path = init_sentinel_path(run_dir)
+    _acquire_init_sentinel(sentinel_path, run_dir)
+    staging_dir = run_dir.parent / f".{run_dir.name}.tmp-{uuid.uuid4().hex}"
 
-    run_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if run_dir.exists() and any(run_dir.iterdir()):
+            raise FileExistsError(f"Run directory already exists and is not empty: {run_dir}")
+
+        spec = _materialize_run_scaffold(staging_dir, run_dir, options)
+
+        if run_dir.exists():
+            run_dir.rmdir()
+        staging_dir.replace(run_dir)
+        return spec
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        try:
+            sentinel_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _materialize_run_scaffold(write_dir: Path, published_run_dir: Path, options: InitOptions) -> RunSpec:
+    write_dir.mkdir(parents=True, exist_ok=True)
     for directory in DIRECTORIES:
-        (run_dir / directory).mkdir(parents=True, exist_ok=True)
+        (write_dir / directory).mkdir(parents=True, exist_ok=True)
 
-    run_id = options.run_id or run_dir.name
+    run_id = options.run_id or published_run_dir.name
     target = bootstrap_target(
         run_id=run_id,
         artifact_type=options.artifact_type,
@@ -86,32 +110,42 @@ def create_run_scaffold(run_dir: Path, options: InitOptions) -> RunSpec:
         )
     )
 
-    _write_goal(run_dir / "goal.md", options.goal, spec, run_dir)
-    _write_text(run_dir / "runbook.md", _runbook_template(spec.run_id, run_dir))
-    _write_json(run_dir / "spec.json", spec.to_dict())
-    _write_text(run_dir / "spec.yaml", dump_yaml(spec.to_dict()) + "\n")
-    _write_json(run_dir / "state.json", state.to_dict())
-    _write_text(run_dir / "evals" / "checks.yaml", _checks_template(options.artifact_type))
-    _write_text(run_dir / "evals" / "judge.md", _judge_template(options.artifact_type))
-    _write_text(run_dir / "evals" / "rubric.yaml", _rubric_template(options.artifact_type, options.goal))
+    _write_goal(write_dir / "goal.md", options.goal, spec, published_run_dir)
+    _write_text(write_dir / "runbook.md", _runbook_template(spec.run_id, published_run_dir))
+    _write_json(write_dir / "spec.json", spec.to_dict())
+    _write_text(write_dir / "spec.yaml", dump_yaml(spec.to_dict()) + "\n")
+    _write_json(write_dir / "state.json", state.to_dict())
+    _write_text(write_dir / "evals" / "checks.yaml", _checks_template(options.artifact_type))
+    _write_text(write_dir / "evals" / "judge.md", _judge_template(options.artifact_type))
+    _write_text(write_dir / "evals" / "rubric.yaml", _rubric_template(options.artifact_type, options.goal))
     _write_text(
-        run_dir / "evals" / "calibration.jsonl",
+        write_dir / "evals" / "calibration.jsonl",
         _calibration_template(options.artifact_type, options.goal),
     )
-    _write_text(run_dir / "cases" / "README.md", CASES_README)
-    _write_text(run_dir / "cases" / "train.jsonl", "")
-    _write_text(run_dir / "cases" / "holdout.jsonl", "")
+    _write_text(write_dir / "cases" / "README.md", CASES_README)
+    _write_text(write_dir / "cases" / "train.jsonl", "")
+    _write_text(write_dir / "cases" / "holdout.jsonl", "")
     _write_text(
-        run_dir / "logs" / "experiments.tsv",
+        write_dir / "logs" / "experiments.tsv",
         "experiment\tscore\tmax_score\tpass_rate\ttrain_status\tholdout_status\tdecision\tdescription\n",
     )
-    _write_text(run_dir / "logs" / "journal.jsonl", "")
-    _write_text(run_dir / "logs" / "events.jsonl", "")
-    _write_text(run_dir / "logs" / "decisions.md", DECISIONS_TEMPLATE)
-    _write_json(run_dir / "active_step.json", default_active_step())
-    _write_text(run_dir / "reports" / "README.md", REPORTS_README)
+    _write_text(write_dir / "logs" / "journal.jsonl", "")
+    _write_text(write_dir / "logs" / "events.jsonl", "")
+    _write_text(write_dir / "logs" / "decisions.md", DECISIONS_TEMPLATE)
+    _write_json(write_dir / "active_step.json", default_active_step())
+    _write_text(write_dir / "reports" / "README.md", REPORTS_README)
 
     return spec
+
+
+def _acquire_init_sentinel(path: Path, run_dir: Path) -> None:
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise FileExistsError(f"Run initialization already in progress: {run_dir}") from exc
+
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(f"{run_dir}\n")
 
 
 def _default_mutation_scope(artifact_type: str) -> MutationScope:

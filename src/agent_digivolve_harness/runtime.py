@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .coordination import active_step_path, ensure_coordination_files, events_path
 from .readiness import assess_run_readiness
-from .workspace import resolve_run_dir
+from .workspace import resolve_run_dir, wait_for_run_initialization
 
 REQUIRED_FILES = [
     "runbook.md",
@@ -26,6 +26,7 @@ REQUIRED_FILES = [
 
 def build_next_payload(run_dir: Path) -> dict:
     run_dir = resolve_run_dir(run_dir)
+    wait_for_run_initialization(run_dir, required_files=REQUIRED_FILES)
     _validate_run_dir(run_dir)
     ensure_coordination_files(run_dir)
     state = _load_json(run_dir / "state.json")
