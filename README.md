@@ -56,6 +56,8 @@ The agent remains the reasoning engine. `digivolve` is the control surface aroun
 
 The important abstraction here is not "README optimization" or "prompt optimization" in isolation. It is the idea that if you can define an evaluation package for something, you can iterate on it in a disciplined way.
 
+That also implies an important limit: this harness is better at optimization than discovery. It is strongest when you already have an artifact, direction, or problem framing and want the agent to keep improving it against explicit acceptance criteria. It is much less useful when the real task is to discover what the goal should be, what the product should feel like, or how success should be judged in the first place.
+
 In practice, that package is not just checks and a judge prompt. This repository now scaffolds:
 
 - `evals/checks.yaml` for binary gates
@@ -70,6 +72,32 @@ That is why the same outer loop can apply to different kinds of work. Today this
 - `repo-task`
 
 Those are the currently implemented surfaces, not the conceptual limit of the pattern.
+
+## Good Fit Vs Poor Fit
+
+In practice, this harness behaves more like controlled search over repeated attempts than like an autonomous discovery engine.
+
+It is a good fit when:
+
+- you already have something real to improve
+- the task can be decomposed into explicit checks, scoring, or acceptance criteria
+- you want the agent to keep iterating without losing a stable baseline or evaluation surface
+- the work is legible enough that "better" can be judged repeatedly in a consistent way
+
+Typical good fits include:
+
+- prompt optimization
+- document and copy refinement
+- backend or protocol work with clear tests or behavioral acceptance criteria
+- math-like or benchmark-like tasks where scoring is comparatively objective
+
+It is a poor fit when:
+
+- the main challenge is discovering the problem framing rather than improving a known artifact
+- the acceptance criteria are mostly subjective, unstable, or negotiated on the fly
+- the task depends heavily on taste, vibe, or emergent UX judgment
+
+That is why this repository is a stronger match for iterating on an existing prompt, README, spec, or protocol-heavy backend task than for greenfield product discovery or open-ended GUI design.
 
 ## Getting Started
 
