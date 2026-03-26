@@ -44,6 +44,7 @@ class EvaluationSpec:
     require_confirmation: bool = True
     evaluator_mode: str = "subagent"
     subagent_system: str = "codex"
+    subagent_model_policy: str = "best_available"
     require_independent_evaluator: bool = True
     panel_size: int = 1
     external_agents: list[str] = field(default_factory=list)

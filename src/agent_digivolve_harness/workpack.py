@@ -283,6 +283,7 @@ def _evaluator_strategy(spec: dict) -> dict:
             "mode": "subagent",
             "label": "built-in subagent",
             "host_system": system,
+            "model_policy": evaluation.get("subagent_model_policy", "best_available"),
             "required_evaluators": panel_size,
             "discussion_note": (
                 "Discuss with the user whether this host system should own independent evaluation."

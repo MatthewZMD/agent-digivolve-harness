@@ -539,7 +539,9 @@ def _evaluator_review_block(spec: dict) -> str:
         return (
             f"- mode: built-in subagent\n"
             f"- host_system: `{system}`\n"
+            f"- subagent_model_policy: `{evaluation.get('subagent_model_policy', 'best_available')}`\n"
             f"- required_evaluators: `{panel_size}`\n"
+            "- use the strongest available evaluator model on that host unless the user explicitly chooses otherwise\n"
             "- this means the host system's own subagent capability; today this is often Codex, but the same pattern can map to Claude Code, OpenCode, or similar systems\n"
             "- discuss with the user whether this host system should own evaluation\n"
             "- if that choice is not already fixed, explicitly ask the user to confirm it rather than assuming it"

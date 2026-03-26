@@ -64,8 +64,9 @@ def _evaluator_summary(spec: dict) -> str:
         return (
             f"- mode: built-in subagent\n"
             f"- host_system: `{evaluation.get('subagent_system', 'codex')}`\n"
+            f"- subagent_model_policy: `{evaluation.get('subagent_model_policy', 'best_available')}`\n"
             f"- required_evaluators: `{panel_size}`\n"
-            "- note: this uses the current host system's own subagent capability; today that is usually Codex, but the pattern can generalize to systems like Claude Code or OpenCode"
+            "- note: this uses the current host system's own subagent capability and should use the strongest available model on that host; today that is usually Codex, but the pattern can generalize to systems like Claude Code or OpenCode"
         )
     return (
         f"- mode: external panel\n"

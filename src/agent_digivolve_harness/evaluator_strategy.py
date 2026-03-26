@@ -26,6 +26,7 @@ def configure_evaluators(
         "mode": evaluation.get("evaluator_mode", "subagent"),
         "panel_size": max(1, int(evaluation.get("panel_size", 1))),
         "subagent_system": evaluation.get("subagent_system", "codex"),
+        "subagent_model_policy": evaluation.get("subagent_model_policy", "best_available"),
         "external_agents": list(evaluation.get("external_agents", [])),
     }
 
@@ -38,6 +39,7 @@ def configure_evaluators(
     if mode == "subagent":
         evaluation["evaluator_mode"] = "subagent"
         evaluation["subagent_system"] = (subagent_system or previous["subagent_system"] or "codex").strip()
+        evaluation["subagent_model_policy"] = previous["subagent_model_policy"] or "best_available"
         evaluation["panel_size"] = normalized_panel_size
         evaluation["external_agents"] = []
     elif mode == "external_panel":
@@ -83,6 +85,7 @@ def configure_evaluators(
                 "mode": evaluation["evaluator_mode"],
                 "panel_size": evaluation["panel_size"],
                 "subagent_system": evaluation.get("subagent_system"),
+                "subagent_model_policy": evaluation.get("subagent_model_policy", "best_available"),
                 "external_agents": list(evaluation.get("external_agents", [])),
             },
             "confirmation_invalidated": True,
@@ -99,6 +102,7 @@ def configure_evaluators(
             "mode": evaluation["evaluator_mode"],
             "panel_size": evaluation["panel_size"],
             "subagent_system": evaluation.get("subagent_system"),
+            "subagent_model_policy": evaluation.get("subagent_model_policy", "best_available"),
             "external_agents": list(evaluation.get("external_agents", [])),
         },
         "state_status": state["status"],
@@ -138,7 +142,8 @@ def _event_summary(evaluation: dict) -> str:
     if evaluation.get("evaluator_mode") == "subagent":
         return (
             "Configured evaluator strategy to use the host system's built-in subagent "
-            f"on `{evaluation.get('subagent_system', 'codex')}`."
+            f"on `{evaluation.get('subagent_system', 'codex')}` with model policy "
+            f"`{evaluation.get('subagent_model_policy', 'best_available')}`."
         )
     return (
         "Configured evaluator strategy to use an external panel: "

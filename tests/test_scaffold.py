@@ -391,6 +391,7 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(spec.run_id, "demo")
             self.assertEqual(spec.evaluation.evaluator_mode, "subagent")
             self.assertEqual(spec.evaluation.subagent_system, "codex")
+            self.assertEqual(spec.evaluation.subagent_model_policy, "best_available")
             self.assertTrue(spec.evaluation.require_independent_evaluator)
             self.assertTrue((run_dir / "goal.md").exists())
             self.assertTrue((run_dir / "runbook.md").exists())
@@ -609,6 +610,7 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("## Evaluator Strategy", review_text)
             self.assertIn("built-in subagent", review_text)
             self.assertIn("host_system: `codex`", review_text)
+            self.assertIn("subagent_model_policy: `best_available`", review_text)
             self.assertIn("## User Rubric", review_text)
             self.assertIn("## Calibration Examples", review_text)
             self.assertIn("explain the eval package in plain language", prompt_text)
@@ -655,6 +657,7 @@ class ScaffoldTests(unittest.TestCase):
             self.assertTrue(any(path.endswith("evals/calibration.jsonl") for path in payload["review_files"]))
             self.assertEqual(payload["evaluator_strategy"]["mode"], "subagent")
             self.assertEqual(payload["evaluator_strategy"]["host_system"], "codex")
+            self.assertEqual(payload["evaluator_strategy"]["model_policy"], "best_available")
             self.assertEqual(payload["evaluator_options"][0]["mode"], "subagent")
             self.assertIn("claude-code", payload["evaluator_options"][0]["examples"])
             self.assertIn("plain language", payload["agent_prompt"])
@@ -664,6 +667,7 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("start baseline", payload["agent_prompt"])
             self.assertIn("Do not silently default to `subagent` or `external_panel`", payload["agent_prompt"])
             self.assertIn("calibration examples", payload["agent_prompt"])
+            self.assertIn("subagent model policy", payload["agent_prompt"])
             self.assertIn("explicitly ask the user to choose it", "\n".join(payload["execution_steps"]))
             self.assertIn("external panel", "\n".join(payload["review_questions"]))
             self.assertIn("good and bad output", "\n".join(payload["review_questions"]))
@@ -976,6 +980,7 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("Do not mutate the artifact during this case", case_payload["case"]["agent_prompt"])
             self.assertIn("Do not self-score", case_payload["case"]["execution_steps"][-1])
             self.assertIn("isolated per check", case_payload["case"]["evaluator_prompt"])
+            self.assertIn("strongest available evaluation model", case_payload["case"]["evaluator_prompt"])
             self.assertIn("rubric", case_payload["case"]["evaluator_prompt"])
             self.assertIn("calibration examples", case_payload["case"]["evaluator_prompt"])
             self.assertEqual(
@@ -987,6 +992,7 @@ class ScaffoldTests(unittest.TestCase):
                 case_payload["case"]["evaluator_prompts"]["format"],
             )
             self.assertIn("Read the user rubric", case_payload["case"]["evaluator_prompts"]["format"])
+            self.assertIn("strongest available model on that host", case_payload["case"]["evaluator_prompts"]["format"])
 
     def test_validate_case_reports_incomplete_and_complete_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

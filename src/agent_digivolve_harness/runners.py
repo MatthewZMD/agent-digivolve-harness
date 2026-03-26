@@ -343,6 +343,11 @@ def _render_runner_markdown(payload: dict) -> str:
         f"- output_dir: `{payload['workspace']['output_dir']}`",
         f"- score_dir: `{payload['workspace']['score_dir']}`",
     ]
+    if payload["evaluation_contract"]["mode"] == "subagent":
+        lines.insert(
+            lines.index(f"- panel_size: `{payload['evaluation_contract']['panel_size']}`"),
+            f"- subagent_model_policy: `{payload['evaluation_contract']['subagent_model_policy']}`",
+        )
     if payload["workspace"].get("worktree_path"):
         lines.append(f"- worktree_path: `{payload['workspace']['worktree_path']}`")
     if payload["workspace"].get("target_path"):
@@ -517,6 +522,11 @@ def _render_case_markdown(payload: dict) -> str:
             )
         ],
     ]
+    if payload["evaluation_contract"]["mode"] == "subagent":
+        lines.insert(
+            lines.index(f"- required_evaluators: `{payload['evaluation_contract']['panel_size']}`"),
+            f"- subagent_model_policy: `{payload['evaluation_contract']['subagent_model_policy']}`",
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -525,6 +535,7 @@ def _evaluation_contract(spec: dict) -> dict:
     return {
         "mode": evaluation.get("evaluator_mode", "subagent"),
         "subagent_system": evaluation.get("subagent_system", "codex"),
+        "subagent_model_policy": evaluation.get("subagent_model_policy", "best_available"),
         "independent_required": bool(evaluation.get("require_independent_evaluator", False)),
         "panel_size": max(1, int(evaluation.get("panel_size", 1))),
         "external_agents": list(evaluation.get("external_agents", [])),

@@ -116,9 +116,16 @@ def build_case_agent_prompt(payload: dict) -> str:
 def build_case_evaluator_prompt(payload: dict) -> str:
     contract = payload["evaluation_contract"]
     case = payload["case"]
+    best_model_line = ""
+    if contract["mode"] == "subagent":
+        best_model_line = (
+            f"Use the strongest available evaluation model on host `{contract.get('subagent_system', 'codex')}`."
+            "\n"
+        )
     return (
         f"Independent evaluation for `{case['split']}:{case['id']}` is isolated per check.\n"
         f"Run one evaluator call per check id in `{payload['check_ids']}`.\n"
+        f"{best_model_line}"
         f"Use the user rubric at `{payload['rubric_path']}` and calibration examples at `{payload['calibration_path']}` to keep the evaluation bar aligned with user preferences.\n"
         f"For each check, use the matching prompt from `evaluator_prompts`, record one verdict, and do not let one check influence another.\n"
         f"Each check requires `{contract['panel_size']}` independent verdict(s) via mode `{contract['mode']}` before finalization."
@@ -139,7 +146,7 @@ def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
         if contract["mode"] == "subagent":
             subagent_line = (
                 f"Use the host system's built-in subagent capability for `{contract.get('subagent_system', 'codex')}` "
-                "to produce this independent verdict."
+                "to produce this independent verdict. Use the strongest available model on that host for evaluation."
             )
         if contract["mode"] == "external_panel":
             external_line = (
@@ -226,6 +233,7 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
                 [
                     "Current proposed evaluator path:",
                     f"- built-in subagent on host system `{strategy.get('host_system', 'codex')}`",
+                    f"- subagent model policy: `{strategy.get('model_policy', 'best_available')}`",
                     f"- required independent verdicts: `{strategy.get('required_evaluators', 1)}`",
                 ]
             )
