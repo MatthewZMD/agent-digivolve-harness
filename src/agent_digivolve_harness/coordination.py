@@ -114,6 +114,22 @@ def load_events(run_dir: Path, *, limit: int | None = None) -> list[dict]:
     return entries[-limit:]
 
 
+def summarize_standing_user_instructions(events: list[dict], *, limit: int = 3) -> list[str]:
+    summaries: list[str] = []
+    seen: set[str] = set()
+    for event in events:
+        if event.get("event_type") != "user_note":
+            continue
+        summary = str(event.get("summary", "")).strip()
+        if not summary or summary in seen:
+            continue
+        summaries.append(summary)
+        seen.add(summary)
+    if limit >= 0:
+        summaries = summaries[-limit:]
+    return summaries
+
+
 def active_step_path(run_dir: Path) -> str:
     run_dir = resolve_run_dir(run_dir)
     ensure_coordination_files(run_dir)

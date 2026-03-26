@@ -11,6 +11,18 @@ def _plain_language_instruction() -> str:
     )
 
 
+def _standing_user_instruction_block(items: list[str] | None) -> str | None:
+    normalized = [item.strip() for item in (items or []) if isinstance(item, str) and item.strip()]
+    if not normalized:
+        return None
+    lines = [
+        "Standing user instructions:",
+        *[f"- {item}" for item in normalized],
+        "Treat these as part of the harness contract unless the user explicitly replaces them.",
+    ]
+    return "\n".join(lines)
+
+
 def build_runner_execution_steps(payload: dict) -> list[str]:
     steps = [
         "Read the runner payload, manifest, checks file, and judge prompt before executing cases.",
@@ -39,6 +51,7 @@ def build_runner_execution_steps(payload: dict) -> list[str]:
 def build_runner_agent_prompt(payload: dict) -> str:
     steps = build_runner_execution_steps(payload)
     step_lines = "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
+    standing_block = _standing_user_instruction_block(payload.get("standing_user_instructions"))
 
     parts = [
         (
@@ -46,6 +59,7 @@ def build_runner_agent_prompt(payload: dict) -> str:
             f"(`{payload['experiment_kind']}`) for the `{payload['adapter']}` adapter."
         ),
         _plain_language_instruction(),
+        standing_block,
         f"Run directory: `{payload['run_dir']}`.",
         f"Artifact path: `{payload['artifact_path']}`." if payload.get("artifact_path") else None,
         (
@@ -87,6 +101,7 @@ def build_case_agent_prompt(payload: dict) -> str:
     case = payload["case"]
     steps = build_case_execution_steps(payload)
     step_lines = "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
+    standing_block = _standing_user_instruction_block(payload.get("standing_user_instructions"))
 
     parts = [
         (
@@ -94,6 +109,7 @@ def build_case_agent_prompt(payload: dict) -> str:
             f"(`{payload['experiment_kind']}`)."
         ),
         _plain_language_instruction(),
+        standing_block,
         f"Run directory: `{payload['run_dir']}`.",
         f"Adapter: `{payload['adapter']}`.",
         f"Artifact path: `{payload['artifact_path']}`." if payload.get("artifact_path") else None,
@@ -185,6 +201,8 @@ def build_case_evaluator_prompts(payload: dict) -> dict[str, str]:
 
 def build_work_packet_agent_prompt(packet: dict) -> str:
     work_type = packet["work_type"]
+    standing_block = _standing_user_instruction_block(packet.get("standing_user_instructions"))
+    standing_prefix = standing_block + "\n" if standing_block else ""
 
     if work_type == "draft_eval_setup":
         task_lines = "\n".join(
@@ -196,10 +214,13 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Continue the draft phase for run `{packet['run_dir']}`.\n"
             + _plain_language_instruction()
             + "\n"
+            + standing_prefix
+            + (
             "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases so the run can reach `ready`.\n"
             "If the user has not given much preference data yet, still propose the strongest first-pass eval package you can from the goal and artifact type.\n"
-            f"{task_lines}\n"
-            f"Done when: {packet['done_when']}"
+            + f"{task_lines}\n"
+            + f"Done when: {packet['done_when']}"
+            )
         )
 
     if work_type == "experiment_execution":
@@ -213,7 +234,8 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Continue `{packet['phase']}` for run `{packet['run_dir']}`.\n"
             + _plain_language_instruction()
             + "\n"
-            f"Read the runner at `{packet['runner_path']}` and complete the active experiment.\n"
+            + standing_prefix
+            + f"Read the runner at `{packet['runner_path']}` and complete the active experiment.\n"
             + (f"{mutation_line}\n" if mutation_line else "")
             + "Pending cases:\n"
             + case_lines
@@ -250,6 +272,7 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Review the eval package for run `{packet['run_dir']}` with the user.\n"
             + _plain_language_instruction()
             + "\n"
+            + standing_prefix
             + "Before asking for approval, explain the eval package in plain language: what it is testing, why each check exists, "
             + "what the rubric and calibration examples are doing, why there are both train and holdout cases, and what baseline means.\n"
             + "Do not start baseline until the user explicitly confirms the package.\n"
@@ -272,7 +295,8 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Replan run `{packet['run_dir']}` before more execution happens.\n"
             + _plain_language_instruction()
             + "\n"
-            f"Reason: {packet.get('replan_reason') or 'A user changed direction or invalidated the current step.'}\n"
+            + standing_prefix
+            + f"Reason: {packet.get('replan_reason') or 'A user changed direction or invalidated the current step.'}\n"
             "Read the event log and active step snapshot first, update the run artifacts to match the new direction, "
             f"then record the new plan with `{packet['recommended_commands'][0]}`."
         )
@@ -282,14 +306,16 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             f"Read the final run state for `{packet['run_dir']}` and generate the closing report.\n"
             + _plain_language_instruction()
             + "\n"
-            f"Recommended command: `{packet['recommended_commands'][0]}`."
+            + standing_prefix
+            + f"Recommended command: `{packet['recommended_commands'][0]}`."
         )
 
     return (
         f"Continue run `{packet['run_dir']}` from phase `{packet['phase']}`.\n"
         + _plain_language_instruction()
         + "\n"
-        f"Done when: {packet.get('done_when', 'the next lifecycle step is complete')}."
+        + standing_prefix
+        + f"Done when: {packet.get('done_when', 'the next lifecycle step is complete')}."
     )
 
 

@@ -31,7 +31,7 @@ from agent_digivolve_harness.execution import (
     validate_case,
 )
 from agent_digivolve_harness.experiments import complete_experiment, experiment_status
-from agent_digivolve_harness.coordination import load_events
+from agent_digivolve_harness.coordination import load_events, summarize_standing_user_instructions
 from agent_digivolve_harness.interventions import (
     add_run_note,
     change_run_direction,
@@ -54,7 +54,7 @@ from agent_digivolve_harness.scaffold import create_run_scaffold
 from agent_digivolve_harness.status_summary import build_status_summary
 from agent_digivolve_harness.step import finalize_step, prepare_step
 from agent_digivolve_harness.workpack import build_work_packet
-from agent_digivolve_harness.runners import build_case_payload
+from agent_digivolve_harness.runners import build_case_payload, build_runner_payload
 from agent_digivolve_harness.workspace import resolve_run_dir, runs_root, targets_root
 
 
@@ -379,6 +379,71 @@ class ScaffoldTests(unittest.TestCase):
         )
         draft_evals(run_dir)
         confirm_evals(run_dir)
+
+    def test_summarize_standing_user_instructions_uses_recent_user_notes(self) -> None:
+        events = [
+            {"event_type": "user_note", "summary": "First instruction."},
+            {"event_type": "run_resumed", "summary": "Ignore me."},
+            {"event_type": "user_note", "summary": "Second instruction."},
+            {"event_type": "user_note", "summary": "Third instruction."},
+        ]
+
+        summaries = summarize_standing_user_instructions(events, limit=2)
+
+        self.assertEqual(summaries, ["Second instruction.", "Third instruction."])
+
+    def test_runner_and_case_prompts_include_standing_user_instructions(self) -> None:
+        run_dir = resolve_run_dir("prompt-prompt-instructions")
+        self._prepare_ready_prompt_run(run_dir)
+        add_run_note(run_dir, "Do not stop to ask again about evaluator approval.")
+
+        spec = json.loads((run_dir / "spec.json").read_text(encoding="utf-8"))
+        manifest = {
+            "experiment_id": 0,
+            "summary_file": "scores/exp-000/summary.json",
+            "cases": [],
+        }
+        runner_payload = build_runner_payload(run_dir, spec, manifest, kind="baseline")
+        case_payload = build_case_payload(
+            runner_payload,
+            {
+                "split": "train",
+                "id": "train-1",
+                "input": "Summarize the prompt.",
+                "output_file": "outputs/exp-000/train-train-1.md",
+                "score_file": "scores/exp-000/train-train-1.json",
+            },
+        )
+
+        self.assertIn("Standing user instructions:", runner_payload["agent_prompt"])
+        self.assertIn(
+            "Do not stop to ask again about evaluator approval.",
+            runner_payload["agent_prompt"],
+        )
+        self.assertIn("Standing user instructions:", case_payload["agent_prompt"])
+        self.assertIn(
+            "Do not stop to ask again about evaluator approval.",
+            case_payload["agent_prompt"],
+        )
+
+    def test_work_packet_prompt_includes_standing_user_instructions(self) -> None:
+        run_dir = resolve_run_dir("draft-work-packet-instructions")
+        create_run_scaffold(
+            run_dir,
+            InitOptions(
+                goal="Improve the README.",
+                artifact_type="document-copy",
+            ),
+        )
+        add_run_note(run_dir, "Assume evaluator approval persists across iterations.")
+
+        packet = build_work_packet(run_dir)
+
+        self.assertIn("Standing user instructions:", packet["agent_prompt"])
+        self.assertIn(
+            "Assume evaluator approval persists across iterations.",
+            packet["agent_prompt"],
+        )
 
     def test_create_document_copy_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

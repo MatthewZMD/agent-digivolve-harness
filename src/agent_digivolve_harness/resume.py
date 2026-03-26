@@ -8,6 +8,7 @@ from .coordination import (
     events_path,
     load_active_step,
     load_events,
+    summarize_standing_user_instructions,
 )
 from .journal import load_journal_entries
 from .readiness import assess_run_readiness
@@ -50,6 +51,7 @@ def build_resume_payload(run_dir: Path, *, activate: bool = False, limit: int = 
     prioritized_reads = _prioritized_reads(report["report_path"], next_payload, current_workspace)
     active_step = load_active_step(run_dir)
     recent_events = load_events(run_dir, limit=limit)
+    standing_user_instructions = summarize_standing_user_instructions(load_events(run_dir, limit=10))
 
     payload = {
         "run_dir": str(run_dir),
@@ -68,7 +70,14 @@ def build_resume_payload(run_dir: Path, *, activate: bool = False, limit: int = 
         "resumed": bool(activate and reactivate_to),
         "replan_required": bool(state.get("replan_required")),
         "replan_reason": state.get("replan_reason"),
-        "agent_prompt": _agent_prompt(run_dir, next_payload["next_action"], next_payload["phase"], report["report_path"]),
+        "standing_user_instructions": standing_user_instructions,
+        "agent_prompt": _agent_prompt(
+            run_dir,
+            next_payload["next_action"],
+            next_payload["phase"],
+            report["report_path"],
+            standing_user_instructions,
+        ),
     }
     return payload
 
@@ -125,15 +134,31 @@ def _prioritized_reads(report_path: str, next_payload: dict, current_workspace: 
     return reads
 
 
-def _agent_prompt(run_dir: Path, next_action: str, phase: str, report_path: str) -> str:
+def _agent_prompt(
+    run_dir: Path,
+    next_action: str,
+    phase: str,
+    report_path: str,
+    standing_user_instructions: list[str],
+) -> str:
+    standing_block = _standing_instruction_block(standing_user_instructions)
     if phase == "replan_required":
         return (
             f"Continue the run in {run_dir}. "
-            f"Read {report_path}, the active step snapshot, and the event log first, "
+            + (standing_block + " " if standing_block else "")
+            + f"Read {report_path}, the active step snapshot, and the event log first, "
             f"then reconcile the direction change before resuming execution."
         )
     return (
         f"Continue the run in {run_dir}. "
-        f"Read {report_path}, the active step snapshot, and the event log first, "
+        + (standing_block + " " if standing_block else "")
+        + f"Read {report_path}, the active step snapshot, and the event log first, "
         f"then follow the current phase `{phase}` and execute `{next_action}`."
     )
+
+
+def _standing_instruction_block(items: list[str]) -> str:
+    normalized = [item.strip() for item in items if item.strip()]
+    if not normalized:
+        return ""
+    return "Standing user instructions: " + " ".join(normalized)

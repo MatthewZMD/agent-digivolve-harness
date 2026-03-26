@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .agent_prompts import build_work_packet_agent_prompt
-from .coordination import load_active_step, load_events, sync_active_step_from_packet
+from .coordination import (
+    load_active_step,
+    load_events,
+    summarize_standing_user_instructions,
+    sync_active_step_from_packet,
+)
 from .execution import load_case, load_runner
 from .experiments import experiment_status
 from .resume import build_resume_payload
@@ -392,4 +397,8 @@ def _attach_operational_context(run_dir: Path, packet: dict) -> dict:
     else:
         packet["active_step"] = load_active_step(run_dir)
     packet["recent_events"] = load_events(run_dir, limit=5)
+    packet["standing_user_instructions"] = summarize_standing_user_instructions(
+        load_events(run_dir, limit=10)
+    )
+    packet["agent_prompt"] = build_work_packet_agent_prompt(packet)
     return packet

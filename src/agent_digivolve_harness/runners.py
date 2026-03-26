@@ -11,6 +11,7 @@ from .agent_prompts import (
     build_runner_agent_prompt,
     build_runner_execution_steps,
 )
+from .coordination import load_events, summarize_standing_user_instructions
 from .evaluation import (
     calibration_file,
     excerpt_text,
@@ -59,6 +60,7 @@ def build_runner_payload(
         parent_commit=parent_commit,
         kind=kind,
     )
+    standing_user_instructions = summarize_standing_user_instructions(load_events(run_dir, limit=10))
 
     payload = {
         "run_dir": str(run_dir.resolve()),
@@ -81,6 +83,7 @@ def build_runner_payload(
         "per_case_max_score": len(check_ids),
         "evaluation_units": checks,
         "evaluation_contract": evaluation_contract,
+        "standing_user_instructions": standing_user_instructions,
         "workspace": workspace,
         "mutation_scope": spec.get("mutation_scope", {}),
         "frozen_rules": spec.get("constraints", {}).get("frozen_rules", []),
@@ -201,6 +204,7 @@ def build_case_payload(runner_payload: dict, case: dict) -> dict:
         "per_case_max_score": runner_payload["per_case_max_score"],
         "evaluation_units": runner_payload["evaluation_units"],
         "evaluation_contract": runner_payload["evaluation_contract"],
+        "standing_user_instructions": runner_payload.get("standing_user_instructions", []),
         "mutation_scope": runner_payload["mutation_scope"],
         "frozen_rules": runner_payload["frozen_rules"],
         "workspace": runner_payload["workspace"],
