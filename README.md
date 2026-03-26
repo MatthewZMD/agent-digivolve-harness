@@ -1,12 +1,12 @@
 # Agent Digivolve Harness
 
-Agent Digivolve Harness is built around a simple observation: for many agent workflows, the first draft is not the hard part. The hard part is iteration.
+Agent Digivolve Harness is a control layer for long-running agent work. It is built around a simple observation: for many agent workflows, the first draft is not the hard part. The hard part is iteration.
 
-A capable CLI agent can usually produce a reasonable first pass. The failure mode tends to appear later, when the work becomes iterative. After a few rounds, it becomes harder to tell what actually improved, harder to preserve a stable evaluation standard, easier to accept regressions by accident, and harder to recover cleanly after interruption. In practice, many agent workflows degrade into unstructured trial and error long before the underlying model runs out of raw capability.
+A capable CLI agent can usually produce a reasonable first pass. The failure mode tends to appear later, when the work becomes iterative. After a few rounds, the evaluation target drifts, regressions get accepted because the newest draft sounds plausible, interruptions erase the external state that made earlier decisions intelligible, and the workflow starts to rely too heavily on self-judgment instead of a stable evaluation surface. In practice, many agent workflows degrade into unstructured trial and error long before the underlying model runs out of raw capability.
 
-This project exists to make that outer loop explicit.
+This project exists to externalize and stabilize that outer loop.
 
-Instead of relying on conversational continuity alone, Agent Digivolve Harness gives the agent a persistent run directory, a fixed evaluation package, a user-calibrated rubric, labeled examples of good and bad outputs, a baseline, bounded mutations, and explicit keep-or-revert decisions. The point is not simply to help an agent write something. The point is to help an agent improve something without losing control of the process.
+Instead of relying on conversational continuity alone, Agent Digivolve Harness gives the agent a persistent run directory, a fixed evaluation package, a user-calibrated rubric, labeled examples of good and bad outputs, a recorded baseline, bounded mutations, and explicit keep-or-revert decisions. The point is not simply to help an agent write something. The point is to help an agent improve something across multiple rounds without losing control of the process.
 
 ## The Core Idea
 
