@@ -6,7 +6,11 @@ A capable CLI agent can usually produce a reasonable first pass. The failure mod
 
 This project exists to externalize and stabilize that outer loop.
 
+That makes it adjacent to context engineering, but not identical to it. Context engineering mostly answers what the model sees on a given turn, how context is compressed, and how information is handed off between turns. A harness also has to answer when baseline starts, what counts as a legal mutation, how outputs are evaluated, who gets to score them, what happens after interruption, and when a change is kept or reverted.
+
 Instead of relying on conversational continuity alone, Agent Digivolve Harness gives the agent a persistent run directory, a fixed evaluation package, a user-calibrated rubric, labeled examples of good and bad outputs, a recorded baseline, bounded mutations, and explicit keep-or-revert decisions. The point is not simply to help an agent write something. The point is to help an agent improve something across multiple rounds without losing control of the process.
+
+This repository is the first open-source attempts to package that outer-loop control explicitly for day-to-day CLI agent work instead of leaving it as an ad hoc method inside long chats.
 
 ## The Core Idea
 
@@ -45,6 +49,7 @@ At the implementation level, each run gives the agent:
 - an explicit evaluation package
 - a rubric for weighted user preferences and tradeoffs
 - calibration examples that show what good and bad look like
+- an explicit evaluator strategy, including independent evaluation when needed
 - a baseline before mutation
 - train and holdout cases
 - one bounded mutation per iteration
@@ -52,11 +57,15 @@ At the implementation level, each run gives the agent:
 
 The agent remains the reasoning engine. `digivolve` is the control surface around the loop.
 
+The evaluation package is the bottleneck. If the checks, rubric, calibration examples, or cases are weak, the loop will optimize the wrong thing faster.
+
 ## Why This Is A Framework, Not Just A Tool
 
 The important abstraction here is not "README optimization" or "prompt optimization" in isolation. It is the idea that if you can define an evaluation package for something, you can iterate on it in a disciplined way.
 
 That also implies an important limit: this harness is better at optimization than discovery. It is strongest when you already have an artifact, direction, or problem framing and want the agent to keep improving it against explicit acceptance criteria. It is much less useful when the real task is to discover what the goal should be, what the product should feel like, or how success should be judged in the first place.
+
+That is also why the harness is broader than context engineering alone. Better context packing helps, but it is only one layer. The harness owns the outer protocol: eval confirmation, baseline, bounded mutation, independent scoring, keep-or-revert, pause, resume, interruption, and replan.
 
 In practice, that package is not just checks and a judge prompt. This repository now scaffolds:
 
@@ -188,8 +197,8 @@ Examples include Codex, Claude Code, and OpenCode.
 
 The project is informed by three public references.
 
-- [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) influenced the emphasis on persistent external state and iterative improvement loops.
-- [Anthropic's harness design for long-running application development](https://www.anthropic.com/engineering/harness-design-long-running-apps) informed the emphasis on generator-evaluator separation, structured handoff artifacts, and skeptical evaluation.
+- [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) influenced the emphasis on fixed evaluation surfaces, persistent external state, and repeated bounded improvement under a stable judge.
+- [Anthropic's harness design for long-running application development](https://www.anthropic.com/engineering/harness-design-long-running-apps) informed the emphasis on generator-evaluator separation, structured handoff artifacts, skeptical evaluation, and the need to externalize long-running work beyond chat context.
 - [GEPA's optimize_anything](https://gepa-ai.github.io/gepa/blog/2026/02/18/introducing-optimize-anything/) informed the framing of one canonical artifact being evaluated across multiple cases with diagnostic feedback.
 
 These references are inspirations for the direction of the harness. They are not claims that this repository implements those systems wholesale.
