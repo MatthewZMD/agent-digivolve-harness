@@ -27,9 +27,14 @@ def draft_evals(run_dir: Path) -> dict:
     ready_for_baseline = readiness["ready_for_baseline"]
     require_confirmation = spec.get("evaluation", {}).get("require_confirmation", True)
     artifact_preview = _artifact_preview(run_dir, spec)
+    alignment_plan_text = _load_alignment_plan_text(run_dir / "reports" / "eval_alignment_plan.md")
+    judge_text = load_support_text(run_dir / spec["evaluation"]["judge_file"])
     rubric_text = load_support_text(run_dir / rubric_file(spec))
     calibration_examples = load_calibration_examples(run_dir / calibration_file(spec), limit=3)
     suggestion_files = _write_draft_suggestions(run_dir, spec, readiness, artifact_preview)
+    checks = load_checks(run_dir / spec["evaluation"]["checks_file"])
+    train_cases = _load_case_inputs(run_dir / "cases" / "train.jsonl")
+    holdout_cases = _load_case_inputs(run_dir / "cases" / "holdout.jsonl")
 
     report_path = run_dir / "reports" / "eval_draft.md"
     report_path.write_text(
@@ -39,6 +44,21 @@ def draft_evals(run_dir: Path) -> dict:
             readiness,
             artifact_preview,
             suggestion_files,
+            alignment_plan_text=alignment_plan_text,
+            rubric_text=rubric_text,
+            calibration_examples=calibration_examples,
+        ),
+        encoding="utf-8",
+    )
+    traceability_path = run_dir / "reports" / "eval_traceability.md"
+    traceability_path.write_text(
+        _build_eval_traceability_report(
+            spec,
+            checks,
+            train_cases,
+            holdout_cases,
+            alignment_plan_text=alignment_plan_text,
+            judge_text=judge_text,
             rubric_text=rubric_text,
             calibration_examples=calibration_examples,
         ),
@@ -48,6 +68,8 @@ def draft_evals(run_dir: Path) -> dict:
         run_dir,
         spec,
         readiness,
+        alignment_plan_text=alignment_plan_text,
+        judge_text=judge_text,
         rubric_text=rubric_text,
         calibration_examples=calibration_examples,
         ready_for_baseline=ready_for_baseline,
@@ -68,6 +90,7 @@ def draft_evals(run_dir: Path) -> dict:
     save_run_state(run_dir, state)
 
     written_files = [str(report_path), str((run_dir / "state.json").resolve())]
+    written_files.append(str(traceability_path.resolve()))
     written_files.extend(str(path.resolve()) for path in suggestion_files)
     written_files.extend(str(path.resolve()) for path in review_files)
 
@@ -94,6 +117,7 @@ def _build_eval_draft_report(
     artifact_preview: str,
     suggestion_files: list[Path],
     *,
+    alignment_plan_text: str,
     rubric_text: str,
     calibration_examples: list[dict[str, str]],
 ) -> str:
@@ -103,6 +127,7 @@ def _build_eval_draft_report(
     readiness_lines = "\n".join(
         [
             _readiness_line("artifact", readiness["artifact"]),
+            _readiness_line("alignment_plan", readiness["alignment_plan"]),
             _readiness_line("checks", readiness["checks"]),
             _readiness_line("judge", readiness["judge"]),
             _readiness_line("train_cases", readiness["train_cases"]),
@@ -126,6 +151,8 @@ def _build_eval_draft_report(
         f"{recommendations}\n\n"
         "## Draft Files\n\n"
         f"{suggestions}\n\n"
+        "## Eval Alignment Plan Preview\n\n"
+        f"```text\n{alignment_plan_text or '<alignment plan missing>'}\n```\n\n"
         "## User Calibration Files\n\n"
         f"- rubric: `{rubric_file(spec)}`\n"
         f"- calibration: `{calibration_file(spec)}`\n\n"
@@ -181,6 +208,11 @@ def _write_draft_suggestions(
         path = run_dir / "evals" / "checks.draft.yaml"
         path.write_text(_checks_draft(spec), encoding="utf-8")
         written.append(path)
+    if not readiness["alignment_plan"]["ready"]:
+        path = run_dir / "reports" / "eval_alignment_plan.md"
+        if not path.exists() or "<replace" in path.read_text(encoding="utf-8").lower():
+            path.write_text(_alignment_plan_draft(spec), encoding="utf-8")
+        written.append(path)
     if not readiness["judge"]["ready"]:
         path = run_dir / "evals" / "judge.draft.md"
         path.write_text(_judge_draft(spec), encoding="utf-8")
@@ -210,6 +242,8 @@ def _write_eval_review_materials(
     spec: dict,
     readiness: dict[str, object],
     *,
+    alignment_plan_text: str,
+    judge_text: str,
     rubric_text: str,
     calibration_examples: list[dict[str, str]],
     ready_for_baseline: bool,
@@ -231,6 +265,8 @@ def _write_eval_review_materials(
             checks,
             train_cases,
             holdout_cases,
+            alignment_plan_text=alignment_plan_text,
+            judge_text=judge_text,
             rubric_text=rubric_text,
             calibration_examples=calibration_examples,
         ),
@@ -242,6 +278,8 @@ def _write_eval_review_materials(
             checks,
             train_cases,
             holdout_cases,
+            alignment_plan_text=alignment_plan_text,
+            judge_text=judge_text,
             rubric_text=rubric_text,
             calibration_examples=calibration_examples,
         ),
@@ -253,6 +291,7 @@ def _write_eval_review_materials(
             checks,
             train_cases,
             holdout_cases,
+            alignment_plan_text=alignment_plan_text,
             rubric_text=rubric_text,
             calibration_examples=calibration_examples,
         ),
@@ -292,6 +331,39 @@ def _judge_draft(spec: dict) -> str:
         "- Keep the evaluation tied to the actual task, not generic style preferences.\n\n"
         "## Frozen Rules\n\n"
         f"{rule_lines}\n"
+    )
+
+
+def _alignment_plan_draft(spec: dict) -> str:
+    return (
+        "# Eval Alignment Plan\n\n"
+        "Use the host agent's plan mode for eval alignment if available, then replace this draft with a detailed durable plan.\n\n"
+        "## Goal\n\n"
+        f"{spec['goal']}\n\n"
+        "## User Goal In Plain Language\n\n"
+        "<replace with the actual optimization target in plain language>\n\n"
+        "## Questions Asked And Answers Learned\n\n"
+        "- Q: <replace>\n"
+        "  A: <replace>\n\n"
+        "## Remaining Unknowns And Working Assumptions\n\n"
+        "- <replace>\n\n"
+        "## Evaluation Design Plan\n\n"
+        "### What counts as success\n\n"
+        "- <replace>\n\n"
+        "### Hard failures and non-negotiables\n\n"
+        "- <replace>\n\n"
+        "### Weighted preferences and tradeoffs\n\n"
+        "- <replace>\n\n"
+        "### Anti-gaming and failure modes to catch\n\n"
+        "- <replace>\n\n"
+        "### Planned train cases\n\n"
+        "- <replace>\n\n"
+        "### Planned holdout cases\n\n"
+        "- <replace>\n\n"
+        "### Evaluator strategy and independence plan\n\n"
+        "- <replace>\n\n"
+        "## Traceability Checklist\n\n"
+        "- Planned requirement: <replace> -> Eval artifact: <replace>\n"
     )
 
 
@@ -357,17 +429,30 @@ def _load_case_inputs(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def _load_alignment_plan_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
 def _build_eval_review_report(
     spec: dict,
     checks: list[dict[str, str]],
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
     *,
+    alignment_plan_text: str,
+    judge_text: str,
     rubric_text: str,
     calibration_examples: list[dict[str, str]],
 ) -> str:
     check_lines = "\n".join(
-        f"- `{check['id']}`: {check['question']}"
+        (
+            f"- `{check['id']}`\n"
+            f"  - question: {check['question']}\n"
+            f"  - pass: {check['pass']}\n"
+            f"  - fail: {check['fail']}"
+        )
         for check in checks
     ) or "- no checks loaded"
     train_lines = "\n".join(
@@ -384,8 +469,12 @@ def _build_eval_review_report(
         "This run is structurally ready, but baseline should not start until the user explicitly confirms the eval package.\n\n"
         "## Goal\n\n"
         f"{spec['goal']}\n\n"
+        "## Detailed Alignment Plan\n\n"
+        f"```text\n{alignment_plan_text or '<alignment plan missing>'}\n```\n\n"
         "## Current Checks\n\n"
         f"{check_lines}\n\n"
+        "## Judge Prompt\n\n"
+        f"```text\n{judge_text or '<judge prompt missing>'}\n```\n\n"
         "## User Rubric\n\n"
         f"```text\n{rubric_text or '<rubric file missing>'}\n```\n\n"
         "## Calibration Examples\n\n"
@@ -398,6 +487,7 @@ def _build_eval_review_report(
         f"{_evaluator_review_block(spec)}\n\n"
         "## Review Angles\n\n"
         "- Do these checks reflect what success actually means to the user?\n"
+        "- Does this review still faithfully reflect the detailed alignment plan, or did anything get simplified too aggressively?\n"
         "- If the user has not given much guidance yet, is this still the best reasonable first-pass eval package?\n"
         "- Does the rubric encode the right weights, tradeoffs, and non-negotiables?\n"
         "- Do the calibration examples capture the user's bar for good and bad output?\n"
@@ -416,11 +506,17 @@ def _build_eval_review_prompt(
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
     *,
+    alignment_plan_text: str,
+    judge_text: str,
     rubric_text: str,
     calibration_examples: list[dict[str, str]],
 ) -> str:
     check_lines = "\n".join(
-        f"- {check['id']}: {check['question']}"
+        (
+            f"- {check['id']}: {check['question']}\n"
+            f"  pass: {check['pass']}\n"
+            f"  fail: {check['fail']}"
+        )
         for check in checks
     )
     train_lines = "\n".join(
@@ -435,6 +531,8 @@ def _build_eval_review_prompt(
         "Use this prompt when reviewing the eval package with the user.\n\n"
         f"Goal: {spec['goal']}\n\n"
         "I drafted the eval package and I will not start baseline until you explicitly say to start.\n\n"
+        "Read the detailed alignment plan first and keep it visible while you review:\n"
+        f"{alignment_plan_text or '<alignment plan missing>'}\n\n"
         "Before asking for approval, explain the eval package in plain language:\n"
         "- what this eval is actually testing\n"
         "- why each check exists\n"
@@ -442,9 +540,12 @@ def _build_eval_review_prompt(
         "- what the calibration examples are teaching the evaluator about good and bad output\n"
         "- why there are both train and holdout cases\n"
         "- what baseline means in this run\n\n"
+        "When the user asks for detail, show the exact checks, pass/fail conditions, judge prompt, rubric, calibration examples, and cases rather than hiding them behind a summary.\n\n"
         "If the user has not said much yet, present this as a best-effort starting point rather than pretending the preferences are already known.\n\n"
         "Checks:\n"
         f"{check_lines}\n\n"
+        "Judge prompt:\n"
+        f"{judge_text or '<judge prompt missing>'}\n\n"
         "Rubric:\n"
         f"{rubric_text or '<rubric file missing>'}\n\n"
         "Calibration examples:\n"
@@ -460,6 +561,7 @@ def _build_eval_review_prompt(
         "1. what to change in the checks, judge, cases, or evaluator strategy\n"
         "2. or explicitly say `start baseline`\n\n"
         "I should also suggest improvements from several angles:\n"
+        "- whether the current eval package faithfully materializes the detailed alignment plan\n"
         "- whether the package needs a better first-pass decomposition into parts of quality\n"
         "- missing user preferences, non-negotiables, or tradeoffs in the rubric\n"
         "- calibration examples that are too generic, too easy, or mislabeled\n"
@@ -478,6 +580,7 @@ def _build_eval_explained_report(
     train_cases: list[dict[str, str]],
     holdout_cases: list[dict[str, str]],
     *,
+    alignment_plan_text: str,
     rubric_text: str,
     calibration_examples: list[dict[str, str]],
 ) -> str:
@@ -505,6 +608,8 @@ def _build_eval_explained_report(
         "In plain language, the eval is not asking whether the artifact merely sounds different. "
         "It is asking whether the artifact is actually better under a fixed set of questions, without "
         "inventing facts, gaming the checks, or only looking good on one easy prompt.\n\n"
+        "## The Detailed Alignment Plan Behind This Eval\n\n"
+        f"```text\n{alignment_plan_text or '<alignment plan missing>'}\n```\n\n"
         "## What The Checks Are Really Testing\n\n"
         f"{check_lines}\n\n"
         "## What The Rubric Is Doing\n\n"
@@ -527,6 +632,58 @@ def _build_eval_explained_report(
         "## What Baseline Means\n\n"
         "Baseline means we first score the current artifact as-is before making any mutation. That gives us "
         "a real reference point, so later iterations can be judged as genuine improvement, regression, or tie.\n"
+    )
+
+
+def _build_eval_traceability_report(
+    spec: dict,
+    checks: list[dict[str, str]],
+    train_cases: list[dict[str, str]],
+    holdout_cases: list[dict[str, str]],
+    *,
+    alignment_plan_text: str,
+    judge_text: str,
+    rubric_text: str,
+    calibration_examples: list[dict[str, str]],
+) -> str:
+    check_lines = "\n".join(
+        (
+            f"- `{check['id']}`\n"
+            f"  - question: {check['question']}\n"
+            f"  - pass: {check['pass']}\n"
+            f"  - fail: {check['fail']}"
+        )
+        for check in checks
+    ) or "- no complete checks loaded"
+    train_lines = "\n".join(
+        f"- `{case['id']}`: {case['input']}"
+        for case in train_cases
+    ) or "- no train cases loaded"
+    holdout_lines = "\n".join(
+        f"- `{case['id']}`: {case['input']}"
+        for case in holdout_cases
+    ) or "- no holdout cases loaded"
+    return (
+        "# Eval Traceability\n\n"
+        "This report exists so the user and executor can inspect the detailed plan and the full eval package in one place.\n\n"
+        "## Goal\n\n"
+        f"{spec['goal']}\n\n"
+        "## Detailed Alignment Plan\n\n"
+        f"```text\n{alignment_plan_text or '<alignment plan missing>'}\n```\n\n"
+        "## Current Checks\n\n"
+        f"{check_lines}\n\n"
+        "## Current Judge Prompt\n\n"
+        f"```text\n{judge_text or '<judge prompt missing>'}\n```\n\n"
+        "## Current Rubric\n\n"
+        f"```text\n{rubric_text or '<rubric file missing>'}\n```\n\n"
+        "## Current Calibration Examples\n\n"
+        f"{format_calibration_examples(calibration_examples)}\n\n"
+        "## Current Train Cases\n\n"
+        f"{train_lines}\n\n"
+        "## Current Holdout Cases\n\n"
+        f"{holdout_lines}\n\n"
+        "## Review Rule\n\n"
+        "If a major requirement appears in the detailed alignment plan but not in the current checks, judge prompt, rubric, calibration examples, or cases, revise the eval package before baseline.\n"
     )
 
 

@@ -134,6 +134,10 @@ def _materialize_run_scaffold(write_dir: Path, published_run_dir: Path, options:
     _write_text(write_dir / "logs" / "decisions.md", DECISIONS_TEMPLATE)
     _write_json(write_dir / "active_step.json", default_active_step())
     _write_text(write_dir / "reports" / "README.md", REPORTS_README)
+    _write_text(
+        write_dir / "reports" / "eval_alignment_plan.md",
+        _eval_alignment_plan_template(options.goal),
+    )
 
     return spec
 
@@ -230,21 +234,24 @@ def _runbook_template(run_id: str, run_dir: Path) -> str:
         "## Read First\n\n"
         "1. `goal.md`\n"
         "2. `spec.yaml`\n"
-        "3. `state.json`\n"
-        "4. the target object path and repo root from `spec.yaml`\n"
-        "5. `evals/checks.yaml`\n"
-        "6. `evals/judge.md`\n"
-        "7. `evals/rubric.yaml`\n"
-        "8. `evals/calibration.jsonl`\n"
-        "9. `cases/train.jsonl`\n"
-        "10. `cases/holdout.jsonl`\n"
-        "11. `logs/experiments.tsv`\n"
-        "12. `logs/decisions.md`\n\n"
+        "3. `reports/eval_alignment_plan.md`\n"
+        "4. `state.json`\n"
+        "5. the target object path and repo root from `spec.yaml`\n"
+        "6. `evals/checks.yaml`\n"
+        "7. `evals/judge.md`\n"
+        "8. `evals/rubric.yaml`\n"
+        "9. `evals/calibration.jsonl`\n"
+        "10. `cases/train.jsonl`\n"
+        "11. `cases/holdout.jsonl`\n"
+        "12. `logs/experiments.tsv`\n"
+        "13. `logs/decisions.md`\n\n"
         "## Operating Rules\n\n"
         "- Keep all state on disk.\n"
+        "- Use the host agent's plan mode for eval alignment when that host supports one, then materialize the detailed result in `reports/eval_alignment_plan.md`.\n"
         "- Respect `mutation_scope` and `frozen_rules` in `spec.yaml`.\n"
         "- Use `evals/rubric.yaml` to encode weighted user preferences, tradeoffs, and non-negotiables.\n"
         "- Use `evals/calibration.jsonl` to preserve user-labeled examples of good and bad outputs.\n"
+        "- Keep the detailed alignment plan, the eval package, and the execution contract visibly in sync instead of letting them drift apart.\n"
         "- Review and confirm the eval package before baseline when confirmation is required.\n"
         "- Every evaluation must come from an independent evaluator. Do not self-grade the executed case.\n"
         "- Run a baseline before any optimization.\n"
@@ -496,6 +503,46 @@ def _default_external_agents(evaluator_mode: str, panel_size: int) -> list[str]:
         return []
     count = max(1, int(panel_size))
     return [f"external-agent-{index}" for index in range(1, count + 1)]
+
+
+def _eval_alignment_plan_template(goal: str) -> str:
+    return (
+        "# Eval Alignment Plan\n\n"
+        "Use this file as the durable planning surface for eval alignment.\n\n"
+        "## How To Use This File\n\n"
+        "- If the current host agent supports a plan mode, use it for the eval-alignment conversation.\n"
+        "- Ask the smallest number of missing user questions needed to make the evaluation serious.\n"
+        "- Rewrite the result here in enough detail that another agent could rebuild the eval package without rereading the whole chat.\n"
+        "- Do not collapse rich user preferences into a few generic checks without documenting how the plan maps to the final eval package.\n\n"
+        "## Goal\n\n"
+        f"{goal}\n\n"
+        "## User Goal In Plain Language\n\n"
+        "<replace with a short restatement of what the user is actually trying to optimize>\n\n"
+        "## Questions Asked And Answers Learned\n\n"
+        "- Q: <replace>\n"
+        "  A: <replace>\n\n"
+        "## Remaining Unknowns And Working Assumptions\n\n"
+        "- <replace>\n\n"
+        "## Evaluation Design Plan\n\n"
+        "### What counts as success\n\n"
+        "- <replace>\n\n"
+        "### Hard failures and non-negotiables\n\n"
+        "- <replace>\n\n"
+        "### Weighted preferences and tradeoffs\n\n"
+        "- <replace>\n\n"
+        "### Anti-gaming and failure modes to catch\n\n"
+        "- <replace>\n\n"
+        "### Planned train cases\n\n"
+        "- <replace>\n\n"
+        "### Planned holdout cases\n\n"
+        "- <replace>\n\n"
+        "### Evaluator strategy and independence plan\n\n"
+        "- <replace>\n\n"
+        "## Traceability Checklist\n\n"
+        "- Planned requirement: <replace> -> Eval artifact: <replace>\n\n"
+        "## Approval Readiness\n\n"
+        "- What the user still needs to review before saying `start baseline`: <replace>\n"
+    )
 
 
 CASES_README = """# Cases

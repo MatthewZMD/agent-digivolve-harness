@@ -51,6 +51,10 @@ def _confirmation_report(spec: dict, *, notes: str | None) -> str:
         f"{spec['goal']}\n\n"
         "## Evaluator Strategy\n\n"
         f"{_evaluator_summary(spec)}\n\n"
+        "## Review Artifacts\n\n"
+        "- detailed_alignment_plan: `reports/eval_alignment_plan.md`\n"
+        "- full_eval_traceability: `reports/eval_traceability.md`\n"
+        "- user_review_bundle: `reports/eval_review.md`\n\n"
         "## Notes\n\n"
         f"{note_block}\n"
     )

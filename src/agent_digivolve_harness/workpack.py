@@ -49,8 +49,14 @@ def _draft_packet(run_dir: Path, next_payload: dict) -> dict:
     existing_suggestions = [str(path.resolve()) for path in suggestion_files if path.exists()]
     spec = load_json(run_dir / "spec.json")
     target_path = spec.get("target", {}).get("object_path")
+    alignment_plan_path = run_dir / "reports" / "eval_alignment_plan.md"
 
     tasks = [
+        {
+            "type": "alignment_plan",
+            "instruction": "Use the host agent's plan mode if available, ask any missing eval-alignment questions the way the host normally would with the user, and write the resulting detailed plan to reports/eval_alignment_plan.md.",
+            "target": str(alignment_plan_path.resolve()),
+        },
         {
             "type": "artifact",
             "instruction": "Replace any placeholder target content with the real artifact under optimization, then commit it.",
@@ -104,9 +110,10 @@ def _draft_packet(run_dir: Path, next_payload: dict) -> dict:
         "run_dir": str(run_dir),
         "phase": "draft",
         "work_type": "draft_eval_setup",
-        "summary": "The run is still missing a stable target/eval/case setup.",
+        "summary": "The run still needs a durable user-aligned eval plan and a stable target/eval/case setup.",
         "required_reads": next_payload["required_reads"],
         "suggestion_files": existing_suggestions,
+        "alignment_plan_path": str(alignment_plan_path.resolve()),
         "tasks": tasks,
         "done_when": next_payload["success_condition"],
         "recommended_commands": [
@@ -225,6 +232,8 @@ def _experiment_packet(run_dir: Path, next_payload: dict) -> dict:
 def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
     spec = load_run_spec(run_dir)
     review_files = [
+        run_dir / "reports" / "eval_alignment_plan.md",
+        run_dir / "reports" / "eval_traceability.md",
         run_dir / "reports" / "eval_draft.md",
         run_dir / "reports" / "eval_review.md",
         run_dir / "reports" / "eval_review_prompt.md",
@@ -237,6 +246,8 @@ def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
         run_dir / "cases" / "holdout.jsonl",
     ]
     review_questions = [
+        "Does the detailed alignment plan faithfully capture what the user actually meant, including open questions, assumptions, tradeoffs, and anti-gaming concerns?",
+        "Does the final eval package fully materialize that alignment plan instead of replacing it with a much simpler generic eval?",
         "Do these checks match what success means to the user?",
         "Does the rubric encode the right weights, tradeoffs, and non-negotiables?",
         "Do the calibration examples capture what the user considers good and bad output?",
@@ -255,6 +266,8 @@ def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
         "summary": "Review the drafted eval package and evaluator strategy with the user before starting baseline.",
         "required_reads": next_payload["required_reads"],
         "review_files": [str(path.resolve()) for path in review_files if path.exists()],
+        "alignment_plan_path": str((run_dir / "reports" / "eval_alignment_plan.md").resolve()),
+        "traceability_path": str((run_dir / "reports" / "eval_traceability.md").resolve()),
         "review_questions": review_questions,
         "evaluator_strategy": _evaluator_strategy(spec),
         "evaluator_options": _evaluator_options(),
@@ -266,8 +279,9 @@ def _confirmation_packet(run_dir: Path, next_payload: dict) -> dict:
         ],
     }
     packet["execution_steps"] = [
+        "Review the detailed eval alignment plan with the user before compressing anything into approval language.",
         "Explain the eval package to the user in plain language before asking for approval.",
-        "Summarize the current checks, judge prompt, rubric, calibration examples, cases, and evaluator strategy for the user.",
+        "Show the current checks, pass/fail conditions, judge prompt, rubric, calibration examples, cases, and evaluator strategy truthfully and fully rather than only summarizing them.",
         "If the evaluator path is not already fixed by the run artifacts, explicitly ask the user to choose it before proceeding.",
         "Suggest stronger alternatives, missing failure modes, and better calibration examples from multiple angles.",
         "Wait for explicit user approval before baseline.",

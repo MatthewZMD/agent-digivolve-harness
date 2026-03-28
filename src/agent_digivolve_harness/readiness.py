@@ -11,6 +11,7 @@ from .workspace import load_run_spec
 def assess_run_readiness(run_dir: Path) -> dict[str, object]:
     spec = load_run_spec(run_dir)
     artifact = _check_artifact(run_dir, spec)
+    alignment_plan = _check_alignment_plan(run_dir / "reports" / "eval_alignment_plan.md")
     checks = _check_checks(run_dir / "evals" / "checks.yaml")
     judge = _check_judge(run_dir / "evals" / "judge.md")
     train = _check_cases(run_dir / "cases" / "train.jsonl", minimum=3)
@@ -18,6 +19,7 @@ def assess_run_readiness(run_dir: Path) -> dict[str, object]:
 
     readiness = {
         "artifact": artifact,
+        "alignment_plan": alignment_plan,
         "checks": checks,
         "judge": judge,
         "train_cases": train,
@@ -26,6 +28,7 @@ def assess_run_readiness(run_dir: Path) -> dict[str, object]:
     readiness["ready_for_baseline"] = all(
         [
             artifact["ready"],
+            alignment_plan["ready"],
             checks["ready"],
             judge["ready"],
             train["ready"],
@@ -39,6 +42,7 @@ def readiness_recommendations(readiness: dict[str, object]) -> list[str]:
     recommendations: list[str] = []
 
     artifact = readiness["artifact"]
+    alignment_plan = readiness["alignment_plan"]
     checks = readiness["checks"]
     judge = readiness["judge"]
     train = readiness["train_cases"]
@@ -46,6 +50,10 @@ def readiness_recommendations(readiness: dict[str, object]) -> list[str]:
 
     if not artifact["ready"]:
         recommendations.append("Replace the target placeholder with the real artifact content and commit it.")
+    if not alignment_plan["ready"]:
+        recommendations.append(
+            "Use the host agent's plan mode for eval alignment if available, ask the missing user questions, and write a detailed durable plan in `reports/eval_alignment_plan.md`."
+        )
     if not checks["ready"]:
         recommendations.append(
             "Refine `evals/checks.yaml` until it contains 3-5 complete binary checks."
@@ -104,6 +112,34 @@ def _check_checks(path: Path) -> dict:
     ready = 3 <= len(complete) <= 6
     reason = "ready" if ready else f"need 3-6 complete checks, found {len(complete)}"
     return {"ready": ready, "count": len(complete), "reason": reason}
+
+
+def _check_alignment_plan(path: Path) -> dict:
+    if not path.exists():
+        return {"ready": False, "reason": "missing eval alignment plan"}
+
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return {"ready": False, "reason": "empty eval alignment plan"}
+    if "<replace" in text.lower():
+        return {"ready": False, "reason": "eval alignment plan still contains placeholders"}
+
+    lines = [line for line in text.splitlines() if line.strip()]
+    required_sections = [
+        "## User Goal In Plain Language",
+        "## Questions Asked And Answers Learned",
+        "## Evaluation Design Plan",
+        "## Traceability Checklist",
+    ]
+    missing = [section for section in required_sections if section not in text]
+    if missing:
+        return {
+            "ready": False,
+            "reason": f"eval alignment plan is missing sections: {', '.join(missing)}",
+        }
+    if len(lines) < 12:
+        return {"ready": False, "reason": "eval alignment plan is too short"}
+    return {"ready": True, "reason": "ready", "lines": len(lines)}
 
 
 def _check_judge(path: Path) -> dict:

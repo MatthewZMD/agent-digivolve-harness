@@ -45,8 +45,11 @@ def build_runner_payload(
     judge_path = str((run_dir / spec["evaluation"]["judge_file"]).resolve())
     rubric_path = str((run_dir / rubric_file(spec)).resolve())
     calibration_path = str((run_dir / calibration_file(spec)).resolve())
+    alignment_plan_path = str((run_dir / "reports" / "eval_alignment_plan.md").resolve())
+    traceability_path = str((run_dir / "reports" / "eval_traceability.md").resolve())
     checks = load_checks(run_dir / spec["evaluation"]["checks_file"])
     check_ids = load_check_ids(run_dir / spec["evaluation"]["checks_file"])
+    alignment_plan_text = load_support_text(run_dir / "reports" / "eval_alignment_plan.md")
     rubric_text = load_support_text(run_dir / rubric_file(spec))
     calibration_examples = load_calibration_examples(run_dir / calibration_file(spec), limit=3)
     evaluation_contract = _evaluation_contract(spec)
@@ -74,7 +77,10 @@ def build_runner_payload(
         "judge_path": judge_path,
         "rubric_path": rubric_path,
         "calibration_path": calibration_path,
+        "alignment_plan_path": alignment_plan_path,
+        "traceability_path": traceability_path,
         "checks": checks,
+        "alignment_plan_text": excerpt_text(alignment_plan_text, limit=4000),
         "rubric_text": excerpt_text(rubric_text, limit=2000),
         "calibration_examples": calibration_examples,
         "calibration_summary": format_calibration_examples(calibration_examples),
@@ -195,7 +201,10 @@ def build_case_payload(runner_payload: dict, case: dict) -> dict:
         "judge_path": runner_payload["judge_path"],
         "rubric_path": runner_payload["rubric_path"],
         "calibration_path": runner_payload["calibration_path"],
+        "alignment_plan_path": runner_payload.get("alignment_plan_path"),
+        "traceability_path": runner_payload.get("traceability_path"),
         "checks": runner_payload["checks"],
+        "alignment_plan_text": runner_payload.get("alignment_plan_text", ""),
         "rubric_text": runner_payload.get("rubric_text", ""),
         "calibration_examples": runner_payload.get("calibration_examples", []),
         "calibration_summary": runner_payload.get("calibration_summary", ""),
@@ -347,6 +356,10 @@ def _render_runner_markdown(payload: dict) -> str:
         f"- output_dir: `{payload['workspace']['output_dir']}`",
         f"- score_dir: `{payload['workspace']['score_dir']}`",
     ]
+    if payload.get("alignment_plan_path"):
+        lines.insert(lines.index(f"- summary_path: `{payload['summary_path']}`"), f"- alignment_plan_path: `{payload['alignment_plan_path']}`")
+    if payload.get("traceability_path"):
+        lines.insert(lines.index(f"- summary_path: `{payload['summary_path']}`"), f"- traceability_path: `{payload['traceability_path']}`")
     if payload["evaluation_contract"]["mode"] == "subagent":
         lines.insert(
             lines.index(f"- panel_size: `{payload['evaluation_contract']['panel_size']}`"),
@@ -442,6 +455,10 @@ def _render_case_markdown(payload: dict) -> str:
         f"- score_file: `{case['score_file']}`",
         f"- evaluation_dir: `{case['evaluation_dir']}`",
     ]
+    if payload.get("alignment_plan_path"):
+        lines.append(f"- alignment_plan_path: `{payload['alignment_plan_path']}`")
+    if payload.get("traceability_path"):
+        lines.append(f"- traceability_path: `{payload['traceability_path']}`")
     if case.get("selector"):
         lines.append(f"- selector: `{case['selector']}`")
     if case.get("projection"):
@@ -526,6 +543,10 @@ def _render_case_markdown(payload: dict) -> str:
             )
         ],
     ]
+    if payload.get("alignment_plan_path"):
+        lines.insert(lines.index(f"- check_ids: `{payload['check_ids']}`"), f"- alignment_plan_path: `{payload['alignment_plan_path']}`")
+    if payload.get("traceability_path"):
+        lines.insert(lines.index(f"- check_ids: `{payload['check_ids']}`"), f"- traceability_path: `{payload['traceability_path']}`")
     if payload["evaluation_contract"]["mode"] == "subagent":
         lines.insert(
             lines.index(f"- required_evaluators: `{payload['evaluation_contract']['panel_size']}`"),

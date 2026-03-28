@@ -25,7 +25,7 @@ def _standing_user_instruction_block(items: list[str] | None) -> str | None:
 
 def build_runner_execution_steps(payload: dict) -> list[str]:
     steps = [
-        "Read the runner payload, manifest, checks file, and judge prompt before executing cases.",
+        "Read the runner payload, manifest, detailed eval alignment plan, full eval traceability report, checks file, and judge prompt before executing cases.",
     ]
 
     target_path = payload.get("workspace", {}).get("target_path")
@@ -69,6 +69,16 @@ def build_runner_agent_prompt(payload: dict) -> str:
         ),
         f"Checks: `{payload['checks_path']}`.",
         f"Judge: `{payload['judge_path']}`.",
+        (
+            f"Detailed eval alignment plan: `{payload['alignment_plan_path']}`."
+            if payload.get("alignment_plan_path")
+            else None
+        ),
+        (
+            f"Full eval traceability report: `{payload['traceability_path']}`."
+            if payload.get("traceability_path")
+            else None
+        ),
         f"Summary target: `{payload['summary_path']}`.",
         "Follow these steps exactly:",
         step_lines,
@@ -80,6 +90,7 @@ def build_case_execution_steps(payload: dict) -> list[str]:
     case = payload["case"]
     steps = [
         f"Read the case input for `{case['split']}:{case['id']}` and keep the execution aligned to the active artifact.",
+        "Keep the execution aligned to the detailed eval alignment plan and full eval package, not just the latest chat summary.",
     ]
 
     if payload["experiment_kind"] == "baseline":
@@ -121,6 +132,16 @@ def build_case_agent_prompt(payload: dict) -> str:
         f"Case kind: `{case['kind']}`.",
         (f"Selector: `{case['selector']}`." if case.get("selector") else None),
         (f"Projection: `{case['projection']}`." if case.get("projection") else None),
+        (
+            f"Detailed eval alignment plan: `{payload['alignment_plan_path']}`."
+            if payload.get("alignment_plan_path")
+            else None
+        ),
+        (
+            f"Full eval traceability report: `{payload['traceability_path']}`."
+            if payload.get("traceability_path")
+            else None
+        ),
         "Case input:",
         case["input"],
         "Follow these steps exactly:",
@@ -215,12 +236,17 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             + _plain_language_instruction()
             + "\n"
             + standing_prefix
-            + (
-            "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases so the run can reach `ready`.\n"
-            "If the user has not given much preference data yet, still propose the strongest first-pass eval package you can from the goal and artifact type.\n"
+            + "Start by aligning with the user about evaluation, not by blindly filling files.\n"
+            + f"If the current host agent supports a plan mode, use it for this alignment step and write the resulting detailed plan to `{packet['alignment_plan_path']}`.\n"
+            + "Ask any missing eval-alignment questions the same way the host normally would with the user, but keep the question count tight and focused.\n"
+            + "Record the result as a durable plan before finalizing checks, rubric, calibration, or cases.\n"
+            + "Do not throw away a rich user conversation by compressing it into a much simpler generic eval package without documenting the mapping.\n"
+            + "When the user has already given a lot of direction in chat, summarize that direction faithfully into the alignment plan instead of pretending it was never said.\n"
+            + "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases so the run can reach `ready`.\n"
+            + "Every part of the eval package should trace back to the alignment plan.\n"
+            + "If the user has not given much preference data yet, still propose the strongest first-pass eval package you can from the goal and artifact type.\n"
             + f"{task_lines}\n"
             + f"Done when: {packet['done_when']}"
-            )
         )
 
     if work_type == "experiment_execution":
@@ -237,6 +263,7 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             + standing_prefix
             + f"Read the runner at `{packet['runner_path']}` and complete the active experiment.\n"
             + (f"{mutation_line}\n" if mutation_line else "")
+            + "Treat the eval alignment plan and the full eval package as part of the execution contract, not as optional background context.\n"
             + "Pending cases:\n"
             + case_lines
             + "\n"
@@ -273,8 +300,12 @@ def build_work_packet_agent_prompt(packet: dict) -> str:
             + _plain_language_instruction()
             + "\n"
             + standing_prefix
+            + f"Read the detailed alignment plan at `{packet['alignment_plan_path']}` first.\n"
+            + f"Read the full eval traceability report at `{packet['traceability_path']}` before presenting approval language.\n"
             + "Before asking for approval, explain the eval package in plain language: what it is testing, why each check exists, "
             + "what the rubric and calibration examples are doing, why there are both train and holdout cases, and what baseline means.\n"
+            + "Show the exact checks, pass conditions, fail conditions, judge prompt, rubric, calibration examples, train cases, holdout cases, and evaluator strategy truthfully and fully when the user wants detail. Do not hide them behind a compressed summary.\n"
+            + "Make clear how the current eval package maps back to the alignment plan and call out anything that was simplified, inferred, or left unresolved.\n"
             + "Do not start baseline until the user explicitly confirms the package.\n"
             + (strategy_block + "\n" if strategy_block else "")
             + "If the evaluator path is not already fixed by the run artifacts, explicitly ask the user to choose it. Do not silently default to `subagent` or `external_panel`.\n"

@@ -139,6 +139,45 @@ class ScaffoldTests(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         self._commit_target(run_dir, "Update target content")
 
+    def _write_alignment_plan(self, run_dir: Path, contents: str | None = None) -> None:
+        plan_path = run_dir / "reports" / "eval_alignment_plan.md"
+        plan_path.write_text(
+            contents
+            or (
+                "# Eval Alignment Plan\n\n"
+                "## Goal\n\n"
+                "Improve the prompt.\n\n"
+                "## User Goal In Plain Language\n\n"
+                "The user wants a prompt that follows format strictly while staying direct.\n\n"
+                "## Questions Asked And Answers Learned\n\n"
+                "- Q: What matters most?\n"
+                "  A: Exact format compliance and directness.\n\n"
+                "## Remaining Unknowns And Working Assumptions\n\n"
+                "- Assume correctness wins over brevity if they conflict.\n\n"
+                "## Evaluation Design Plan\n\n"
+                "### What counts as success\n\n"
+                "- Responses follow the requested structure and answer directly.\n\n"
+                "### Hard failures and non-negotiables\n\n"
+                "- Do not violate explicit prompt constraints.\n\n"
+                "### Weighted preferences and tradeoffs\n\n"
+                "- Prefer correctness over brevity.\n\n"
+                "### Anti-gaming and failure modes to catch\n\n"
+                "- Catch format gaming and filler that sounds polished but dodges the task.\n\n"
+                "### Planned train cases\n\n"
+                "- Simple formatting and directness checks.\n\n"
+                "### Planned holdout cases\n\n"
+                "- Similar requests with different wording to test transfer.\n\n"
+                "### Evaluator strategy and independence plan\n\n"
+                "- Use the host subagent evaluator independently from the executor.\n\n"
+                "## Traceability Checklist\n\n"
+                "- Planned requirement: strict format -> Eval artifact: checks.yaml `format`\n"
+                "- Planned requirement: directness -> Eval artifact: rubric directness and train cases\n\n"
+                "## Approval Readiness\n\n"
+                "- The user should verify the checks, cases, and evaluator choice before baseline.\n"
+            ),
+            encoding="utf-8",
+        )
+
     def _commit_target(self, run_dir: Path, message: str) -> None:
         spec = json.loads((run_dir / "spec.json").read_text(encoding="utf-8"))
         repo_root = Path(spec["target"]["repo_root"]).resolve()
@@ -268,6 +307,7 @@ class ScaffoldTests(unittest.TestCase):
             run_dir,
             "# Prompt\n\nFollow the rules exactly.\n",
         )
+        self._write_alignment_plan(run_dir)
         (run_dir / "evals" / "checks.yaml").write_text(
             "\n".join(
                 [
@@ -644,14 +684,30 @@ class ScaffoldTests(unittest.TestCase):
 
             self.assertEqual(payload["phase"], "draft")
             self.assertEqual(payload["work_type"], "draft_eval_setup")
+            self.assertTrue(any(task["type"] == "alignment_plan" for task in payload["tasks"]))
             self.assertTrue(any(path.endswith("checks.draft.yaml") for path in payload["suggestion_files"]))
             self.assertTrue(any(task["type"] == "train_cases" for task in payload["tasks"]))
             self.assertTrue(any(task["type"] == "rubric" for task in payload["tasks"]))
             self.assertTrue(any(task["type"] == "calibration" for task in payload["tasks"]))
-            self.assertIn(
-                "Materialize the target, checks, judge prompt, rubric, calibration examples, and cases",
-                payload["agent_prompt"],
+            self.assertIn("plan mode", payload["agent_prompt"])
+            self.assertIn("eval_alignment_plan.md", payload["agent_prompt"])
+            self.assertIn("Every part of the eval package should trace back to the alignment plan", payload["agent_prompt"])
+
+    def test_readiness_requires_detailed_alignment_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = resolve_run_dir(Path(tmpdir) / "runs" / "readiness-needs-plan")
+            self._prepare_ready_prompt_run(run_dir)
+
+            (run_dir / "reports" / "eval_alignment_plan.md").write_text(
+                "# Eval Alignment Plan\n\n<replace>\n",
+                encoding="utf-8",
             )
+
+            readiness = assess_run_readiness(run_dir)
+
+            self.assertFalse(readiness["alignment_plan"]["ready"])
+            self.assertFalse(readiness["ready_for_baseline"])
+            self.assertIn("placeholders", readiness["alignment_plan"]["reason"])
 
     def test_next_reports_ready_when_cases_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -726,22 +782,31 @@ class ScaffoldTests(unittest.TestCase):
             self.assertTrue(payload["ready_for_baseline"])
             self.assertEqual(payload["state_status"], "awaiting_confirmation")
             self.assertTrue((run_dir / "reports" / "eval_draft.md").exists())
+            self.assertTrue((run_dir / "reports" / "eval_traceability.md").exists())
             self.assertTrue((run_dir / "reports" / "eval_review.md").exists())
             self.assertTrue((run_dir / "reports" / "eval_review_prompt.md").exists())
             self.assertTrue((run_dir / "reports" / "eval_explained.md").exists())
+            traceability_text = (run_dir / "reports" / "eval_traceability.md").read_text(encoding="utf-8")
             review_text = (run_dir / "reports" / "eval_review.md").read_text(encoding="utf-8")
             prompt_text = (run_dir / "reports" / "eval_review_prompt.md").read_text(encoding="utf-8")
             explained_text = (run_dir / "reports" / "eval_explained.md").read_text(encoding="utf-8")
+            self.assertIn("## Detailed Alignment Plan", traceability_text)
+            self.assertIn("## Current Judge Prompt", traceability_text)
             self.assertIn("## Evaluator Strategy", review_text)
+            self.assertIn("## Detailed Alignment Plan", review_text)
+            self.assertIn("## Judge Prompt", review_text)
             self.assertIn("built-in subagent", review_text)
             self.assertIn("host_system: `codex`", review_text)
             self.assertIn("subagent_model_policy: `best_available`", review_text)
             self.assertIn("## User Rubric", review_text)
             self.assertIn("## Calibration Examples", review_text)
+            self.assertIn("Read the detailed alignment plan first", prompt_text)
+            self.assertIn("show the exact checks, pass/fail conditions, judge prompt", prompt_text)
             self.assertIn("explain the eval package in plain language", prompt_text)
             self.assertIn("evaluator strategy", prompt_text)
             self.assertIn("what the rubric is encoding", prompt_text)
             self.assertIn("calibration examples", prompt_text)
+            self.assertIn("## The Detailed Alignment Plan Behind This Eval", explained_text)
             self.assertIn("## What Baseline Means", explained_text)
             self.assertIn("## Why There Are Holdout Cases", explained_text)
             self.assertIn("## What The Rubric Is Doing", explained_text)
@@ -776,6 +841,8 @@ class ScaffoldTests(unittest.TestCase):
                 payload["summary"],
                 "Review the drafted eval package and evaluator strategy with the user before starting baseline.",
             )
+            self.assertTrue(any(path.endswith("reports/eval_alignment_plan.md") for path in payload["review_files"]))
+            self.assertTrue(any(path.endswith("reports/eval_traceability.md") for path in payload["review_files"]))
             self.assertTrue(any(path.endswith("reports/eval_review.md") for path in payload["review_files"]))
             self.assertTrue(any(path.endswith("reports/eval_explained.md") for path in payload["review_files"]))
             self.assertTrue(any(path.endswith("evals/rubric.yaml") for path in payload["review_files"]))
@@ -786,14 +853,21 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(payload["evaluator_options"][0]["mode"], "subagent")
             self.assertIn("claude-code", payload["evaluator_options"][0]["examples"])
             self.assertIn("plain language", payload["agent_prompt"])
+            self.assertIn("eval_alignment_plan.md", payload["agent_prompt"])
+            self.assertIn("eval_traceability.md", payload["agent_prompt"])
+            self.assertIn("truthfully and fully", payload["agent_prompt"])
             self.assertTrue(
-                any("Explain the eval package to the user in plain language" in step for step in payload["execution_steps"])
+                any("Review the detailed eval alignment plan" in step for step in payload["execution_steps"])
+            )
+            self.assertTrue(
+                any("truthfully and fully" in step for step in payload["execution_steps"])
             )
             self.assertIn("start baseline", payload["agent_prompt"])
             self.assertIn("Do not silently default to `subagent` or `external_panel`", payload["agent_prompt"])
             self.assertIn("calibration examples", payload["agent_prompt"])
             self.assertIn("subagent model policy", payload["agent_prompt"])
             self.assertIn("explicitly ask the user to choose it", "\n".join(payload["execution_steps"]))
+            self.assertIn("alignment plan", "\n".join(payload["review_questions"]))
             self.assertIn("external panel", "\n".join(payload["review_questions"]))
             self.assertIn("good and bad output", "\n".join(payload["review_questions"]))
             self.assertTrue(
@@ -1088,10 +1162,14 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(runner_payload["experiment_id"], 0)
             self.assertEqual(runner_payload["adapter"], "prompt_runner")
             self.assertTrue(any("Use the current committed target as-is" in step for step in runner_payload["execution_steps"]))
+            self.assertTrue(any("detailed eval alignment plan" in step for step in runner_payload["execution_steps"]))
             self.assertIn("Follow these steps exactly:", runner_payload["agent_prompt"])
             self.assertTrue(runner_payload["rubric_path"].endswith("evals/rubric.yaml"))
             self.assertTrue(runner_payload["calibration_path"].endswith("evals/calibration.jsonl"))
+            self.assertTrue(runner_payload["alignment_plan_path"].endswith("reports/eval_alignment_plan.md"))
+            self.assertTrue(runner_payload["traceability_path"].endswith("reports/eval_traceability.md"))
             self.assertIn("Example 1:", runner_payload["calibration_summary"])
+            self.assertIn("Detailed eval alignment plan:", runner_payload["agent_prompt"])
 
             cases_payload = list_cases(run_dir)
             self.assertEqual(cases_payload["total_cases"], 5)
@@ -1102,8 +1180,10 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(case_payload["case"]["case"]["split"], "train")
             self.assertEqual(case_payload["case"]["per_case_max_score"], 3)
             self.assertTrue(case_payload["case"]["bundle_path"].endswith("train-train-1.json"))
+            self.assertTrue(any("detailed eval alignment plan" in step for step in case_payload["case"]["execution_steps"]))
             self.assertIn("Do not mutate the artifact during this case", case_payload["case"]["agent_prompt"])
             self.assertIn("Do not self-score", case_payload["case"]["execution_steps"][-1])
+            self.assertIn("Detailed eval alignment plan:", case_payload["case"]["agent_prompt"])
             self.assertIn("isolated per check", case_payload["case"]["evaluator_prompt"])
             self.assertIn("strongest available evaluation model", case_payload["case"]["evaluator_prompt"])
             self.assertIn("rubric", case_payload["case"]["evaluator_prompt"])
